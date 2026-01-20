@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from app.embedder import Embedder
+from app.llm import LLMClient
+from app.qa import QAEngine
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Repo-Aware AI Assistant (Google API)")
+    p.add_argument("--repo", required=True, help="Path to the target repository")
+    p.add_argument("--cache", default="data/index", help="Cache dir for FAISS index + metadata")
+    p.add_argument("--rebuild", action="store_true", help="Force rebuild the index")
+    p.add_argument("--topk", type=int, default=6, help="Top-k chunks to retrieve")
+    p.add_argument("--temperature", type=float, default=0.2, help="LLM temperature")
+    p.add_argument("--chunk_size", type=int, default=1800, help="Chunk size (characters)")
+    p.add_argument("--overlap", type=int, default=250, help="Chunk overlap (characters)")
+    return p.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    repo_root = Path(args.repo).resolve()
+    cache_base = Path(args.cache).resolve()
+
+    print("[+] Initializing Google AI clients...")
+    
+    try:
+        embedder = Embedder()
+        llm = LLMClient(temperature=args.temperature)
+    except ValueError as e:
+        print(f"\n[!] Configuration Error:\n{e}")
+        print("\n[i] Create a .env file with your Google API key:")
+        print("    GOOGLE_API_KEY=your_key_here")
+        print("\n[i] Get your key from: https://aistudio.google.com/app/apikey")
+        return
+    except ImportError as e:
+        print(f"\n[!] Missing dependency:\n{e}")
+        print("\n[i] Install with: pip install -r requirements.txt")
+        return
+
+    engine = QAEngine(
+        repo_root=repo_root,
+        cache_base=cache_base,
+        embedder=embedder,
+        llm=llm,
+        chunk_size=args.chunk_size,
+        overlap=args.overlap,
+        top_k=args.topk,
+    )
+
+    print(f"[+] Repo: {repo_root}")
+    print(f"[+] Cache: {cache_base}")
+    print(f"[+] Model: {llm.model}")
+    print("[+] Building/loading index...")
+    engine.build(force_rebuild=args.rebuild)
+    if engine.cache_dir:
+        print(f"[+] Index ready in: {engine.cache_dir}")
+
+    print("\nType a question, or 'exit' to quit.\n")
+    while True:
+        try:
+            q = input(">> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nbye")
+            break
+
+        if not q:
+            continue
+        if q.lower() in {"exit", "quit", "q"}:
+            print("bye")
+            break
+
+        ans, sources = engine.ask(q)
+        print("\nANSWER:\n" + ans.strip())
+        print("\nSOURCES:")
+        for s in sources:
+            print(" - " + s)
+        print("")
+
+
+if __name__ == "__main__":
+    main()

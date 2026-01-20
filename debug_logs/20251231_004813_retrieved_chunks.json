@@ -1,0 +1,44 @@
+[
+  {
+    "source": "app/llm.py",
+    "start": 1550,
+    "end": 2062,
+    "score": 0.6802538633346558,
+    "length": 512
+  },
+  {
+    "source": "app/loader.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6695371866226196,
+    "length": 1800
+  },
+  {
+    "source": "README.md",
+    "start": 1550,
+    "end": 1808,
+    "score": 0.6654977798461914,
+    "length": 258
+  },
+  {
+    "source": "app/qa.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6646249294281006,
+    "length": 1800
+  },
+  {
+    "source": "README.md",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6615780591964722,
+    "length": 1800
+  },
+  {
+    "source": "app/llm.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6447783708572388,
+    "length": 1800
+  }
+]

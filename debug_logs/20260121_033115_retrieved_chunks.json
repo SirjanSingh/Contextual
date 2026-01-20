@@ -1,0 +1,44 @@
+[
+  {
+    "source": "README.md",
+    "start": 0,
+    "end": 1800,
+    "score": 0.58806312084198,
+    "length": 1800
+  },
+  {
+    "source": ".github/copilot-instructions.md",
+    "start": 0,
+    "end": 1800,
+    "score": 0.5784739851951599,
+    "length": 1800
+  },
+  {
+    "source": "app/indexer.py",
+    "start": 3100,
+    "end": 4817,
+    "score": 0.5747660398483276,
+    "length": 1717
+  },
+  {
+    "source": ".github/copilot-instructions.md",
+    "start": 3100,
+    "end": 4880,
+    "score": 0.5738787651062012,
+    "length": 1780
+  },
+  {
+    "source": "app/chunker.py",
+    "start": 0,
+    "end": 1304,
+    "score": 0.5728165507316589,
+    "length": 1304
+  },
+  {
+    "source": ".github/copilot-instructions.md",
+    "start": 1550,
+    "end": 3350,
+    "score": 0.5628344416618347,
+    "length": 1800
+  }
+]

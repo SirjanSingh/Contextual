@@ -1,0 +1,44 @@
+[
+  {
+    "source": "app/embedder.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6889652609825134,
+    "length": 1800
+  },
+  {
+    "source": "app/embedder.py",
+    "start": 1550,
+    "end": 3350,
+    "score": 0.681098461151123,
+    "length": 1800
+  },
+  {
+    "source": "app/embedder.py",
+    "start": 3100,
+    "end": 3843,
+    "score": 0.6727666854858398,
+    "length": 743
+  },
+  {
+    "source": "app/qa.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6394749879837036,
+    "length": 1800
+  },
+  {
+    "source": "test_api.py",
+    "start": 0,
+    "end": 1157,
+    "score": 0.6091256141662598,
+    "length": 1157
+  },
+  {
+    "source": "app/retriever.py",
+    "start": 0,
+    "end": 1500,
+    "score": 0.6002376079559326,
+    "length": 1500
+  }
+]

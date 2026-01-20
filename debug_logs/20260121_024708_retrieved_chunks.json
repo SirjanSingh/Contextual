@@ -1,0 +1,44 @@
+[
+  {
+    "source": "app/embedder.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6839868426322937,
+    "length": 1800
+  },
+  {
+    "source": "app/qa.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6304787397384644,
+    "length": 1800
+  },
+  {
+    "source": "app/embedder.py",
+    "start": 1550,
+    "end": 3350,
+    "score": 0.6268115043640137,
+    "length": 1800
+  },
+  {
+    "source": "app/embedder.py",
+    "start": 3100,
+    "end": 3843,
+    "score": 0.6133044958114624,
+    "length": 743
+  },
+  {
+    "source": "app/retriever.py",
+    "start": 0,
+    "end": 1500,
+    "score": 0.5898085832595825,
+    "length": 1500
+  },
+  {
+    "source": ".github/copilot-instructions.md",
+    "start": 3100,
+    "end": 4880,
+    "score": 0.5763723850250244,
+    "length": 1780
+  }
+]

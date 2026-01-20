@@ -1,0 +1,23 @@
+[
+  {
+    "source": "app/qa.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.7433289289474487,
+    "length": 1800
+  },
+  {
+    "source": "app/retriever.py",
+    "start": 0,
+    "end": 1500,
+    "score": 0.7223083972930908,
+    "length": 1500
+  },
+  {
+    "source": "app/embedder.py",
+    "start": 0,
+    "end": 1055,
+    "score": 0.706030011177063,
+    "length": 1055
+  }
+]

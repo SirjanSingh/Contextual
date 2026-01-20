@@ -1,0 +1,6 @@
+google-genai>=0.2.0
+faiss-cpu
+numpy
+tqdm
+python-dotenv
+tenacity

@@ -1,0 +1,23 @@
+[
+  {
+    "source": "app/qa.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6799571514129639,
+    "length": 1800
+  },
+  {
+    "source": "README.md",
+    "start": 1550,
+    "end": 1808,
+    "score": 0.6756035685539246,
+    "length": 258
+  },
+  {
+    "source": "app/loader.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.6625663638114929,
+    "length": 1800
+  }
+]

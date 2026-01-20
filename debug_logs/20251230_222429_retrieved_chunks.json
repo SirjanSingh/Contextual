@@ -1,0 +1,23 @@
+[
+  {
+    "source": "app/qa.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.7348214387893677,
+    "length": 1800
+  },
+  {
+    "source": "app/retriever.py",
+    "start": 0,
+    "end": 1500,
+    "score": 0.7101114392280579,
+    "length": 1500
+  },
+  {
+    "source": "app/qa.py",
+    "start": 1550,
+    "end": 1884,
+    "score": 0.693346381187439,
+    "length": 334
+  }
+]

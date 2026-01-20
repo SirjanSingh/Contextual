@@ -1,0 +1,44 @@
+[
+  {
+    "source": "app/retriever.py",
+    "start": 0,
+    "end": 1500,
+    "score": 0.7820016145706177,
+    "length": 1500
+  },
+  {
+    "source": "app/qa.py",
+    "start": 0,
+    "end": 1800,
+    "score": 0.7706539630889893,
+    "length": 1800
+  },
+  {
+    "source": "app/embedder.py",
+    "start": 0,
+    "end": 1055,
+    "score": 0.7433089017868042,
+    "length": 1055
+  },
+  {
+    "source": "app/qa.py",
+    "start": 1550,
+    "end": 2346,
+    "score": 0.7277148962020874,
+    "length": 796
+  },
+  {
+    "source": "README.md",
+    "start": 1550,
+    "end": 1808,
+    "score": 0.7253618240356445,
+    "length": 258
+  },
+  {
+    "source": "app/chunker.py",
+    "start": 0,
+    "end": 1304,
+    "score": 0.7019748687744141,
+    "length": 1304
+  }
+]
