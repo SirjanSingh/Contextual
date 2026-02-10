@@ -53,7 +53,7 @@ def _format_context(chunks: List[RetrievedChunk], max_chars: int = 15000) -> str
 class LLMClient:
     """LLM client using Google Gemini API with new google.genai package."""
     
-    model: str = "gemini-2.0-flash-exp"
+    model: str = "models/gemini-2.0-flash"
     temperature: float = 0.2
     _client: object = field(default=None, repr=False, init=False)
     
@@ -73,20 +73,24 @@ class LLMClient:
         self.model = config.gemini_model
         self._types = types
     
-    def answer(self, question: str, chunks: List[RetrievedChunk]) -> str:
+    def answer(self, question: str, chunks: List[RetrievedChunk], conversation_context: str = "") -> str:
         """Generate an answer based on retrieved chunks.
         
         Args:
             question: The user's question.
             chunks: Retrieved code chunks as context.
+            conversation_context: Optional conversation history for follow-up questions.
         
         Returns:
             The generated answer string.
         """
         context = _format_context(chunks)
         
+        # Include conversation history if provided
+        full_context = conversation_context + context if conversation_context else context
+        
         user_prompt = f"""REPO CONTEXT:
-{context}
+{full_context}
 
 QUESTION:
 {question}

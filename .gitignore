@@ -4,27 +4,79 @@ __pycache__/
 *.pyo
 *.pyd
 *.so
+*.pyc
 *.egg-info/
 .eggs/
 dist/
 build/
 
-# Envs
+# Virtual Environments
 .venv/
+.venv_new/
 venv/
 env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Local data/cache
-data/index/*
+data/
+!data/.gitkeep
 !data/index/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
 
-# Secrets
+# Model cache & downloads
+.cache/
+models/
+checkpoints/
+huggingface_cache/
+
+# Logs & Debug
+*.log
+debug_logs/
+.debug_logs/
+logs/
+
+# Test files
+test_models.py
+test_api.py
+*.test.py
+
+# Secrets & Config
 .env
 .env.*
+!.env.example
+*.key
+*.pem
 
+# Project specific
 .github/
+.agent/
 
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover

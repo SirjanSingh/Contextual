@@ -44,10 +44,11 @@ def try_load_index(
     chunks: List[Chunk],
     cache_base: str | Path,
     dim: int,
-) -> Tuple[faiss.Index, List[Dict], Path] | None:
+    load_bm25: bool = False,
+) -> Tuple[faiss.Index, List[Dict], Path, object | None] | None:
     """Try to load a cached index/metadata for this repo+file set.
 
-    Returns (index, metadata, cache_dir) if a valid cache exists, else None.
+    Returns (index, metadata, cache_dir, bm25_index) if a valid cache exists, else None.
     """
     repo_root = Path(repo_root).resolve()
     cache_base = Path(cache_base).resolve()
@@ -57,6 +58,7 @@ def try_load_index(
     index_path = cdir / "index.faiss"
     meta_path = cdir / "metadata.pkl"
     manifest_path = cdir / "manifest.json"
+    bm25_path = cdir / "bm25_index.pkl"
 
     if not (index_path.exists() and meta_path.exists() and manifest_path.exists()):
         return None
@@ -72,7 +74,14 @@ def try_load_index(
             return None
         index = faiss.read_index(str(index_path))
         metadata = pickle.loads(meta_path.read_bytes())
-        return index, metadata, cdir
+        
+        # Load BM25 index if requested and exists
+        bm25_index = None
+        if load_bm25 and bm25_path.exists():
+            from .hybrid_search import BM25Index
+            bm25_index = BM25Index.load(bm25_path)
+        
+        return index, metadata, cdir, bm25_index
     except Exception:
         return None
 
@@ -84,12 +93,14 @@ def build_or_load_index(
     embeddings: np.ndarray,
     cache_base: str | Path,
     force_rebuild: bool = False,
-) -> Tuple[faiss.Index, List[Dict], Path]:
+    build_bm25: bool = False,
+) -> Tuple[faiss.Index, List[Dict], Path, object | None]:
     """
     Saves/loads:
       - FAISS index: index.faiss
       - metadata: metadata.pkl (list of dicts aligned with vectors)
       - manifest: manifest.json (fingerprint etc.)
+      - BM25 index: bm25_index.pkl (optional, if build_bm25=True)
     """
     repo_root = Path(repo_root).resolve()
     cache_base = Path(cache_base).resolve()
@@ -101,6 +112,7 @@ def build_or_load_index(
     index_path = cdir / "index.faiss"
     meta_path = cdir / "metadata.pkl"
     manifest_path = cdir / "manifest.json"
+    bm25_path = cdir / "bm25_index.pkl"
 
     file_list = list({c.source for c in chunks})
     fp = _repo_fingerprint(repo_root, file_list)
@@ -111,7 +123,14 @@ def build_or_load_index(
             if manifest.get("fingerprint") == fp and manifest.get("dim") == int(embeddings.shape[1]):
                 index = faiss.read_index(str(index_path))
                 metadata = pickle.loads(meta_path.read_bytes())
-                return index, metadata, cdir
+                
+                # Load BM25 index if requested and exists
+                bm25_index = None
+                if build_bm25 and bm25_path.exists():
+                    from .hybrid_search import BM25Index
+                    bm25_index = BM25Index.load(bm25_path)
+                
+                return index, metadata, cdir, bm25_index
         except Exception:
             pass  # fall through to rebuild
 
@@ -144,10 +163,19 @@ def build_or_load_index(
         "created_at": int(__import__("time").time()),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    
+    # Build BM25 index if requested
+    bm25_index = None
+    if build_bm25:
+        from .hybrid_search import BM25Index
+        bm25_index = BM25Index.build(metadata)
+        bm25_index.save(bm25_path)
+        print(f"[+] BM25 index saved to cache")
+    
     # Helpful build diagnostics
     unique_sources = sorted({c.source for c in chunks})
     print(f"[+] Indexed chunks: {len(chunks)}")
     print(f"[+] Indexed files: {len(unique_sources)}")
     print("[+] Sample files:", unique_sources[:10])
 
-    return index, metadata, cdir
+    return index, metadata, cdir, bm25_index

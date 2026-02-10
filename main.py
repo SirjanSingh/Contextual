@@ -17,6 +17,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--temperature", type=float, default=0.2, help="LLM temperature")
     p.add_argument("--chunk_size", type=int, default=1800, help="Chunk size (characters)")
     p.add_argument("--overlap", type=int, default=250, help="Chunk overlap (characters)")
+    p.add_argument("--no-rerank", action="store_true", help="Disable reranking (faster but less accurate)")
+    p.add_argument("--no-hybrid", action="store_true", help="Disable hybrid search (vector-only)")
     return p.parse_args()
 
 
@@ -49,6 +51,8 @@ def main() -> None:
         chunk_size=args.chunk_size,
         overlap=args.overlap,
         top_k=args.topk,
+        use_reranker=not args.no_rerank,  # Invert the flag
+        use_hybrid_search=not args.no_hybrid,  # Invert the flag
     )
 
     print(f"[+] Repo: {repo_root}")
@@ -72,6 +76,10 @@ def main() -> None:
         if q.lower() in {"exit", "quit", "q"}:
             print("bye")
             break
+        if q.lower() in {"clear", "reset"}:
+            engine.clear_conversation()
+            print("[+] Conversation history cleared")
+            continue
 
         ans, sources = engine.ask(q)
         print("\nANSWER:\n" + ans.strip())
