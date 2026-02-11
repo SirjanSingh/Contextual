@@ -19,6 +19,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--overlap", type=int, default=250, help="Chunk overlap (characters)")
     p.add_argument("--no-rerank", action="store_true", help="Disable reranking (faster but less accurate)")
     p.add_argument("--no-hybrid", action="store_true", help="Disable hybrid search (vector-only)")
+    p.add_argument("--no-expand", action="store_true", help="Disable query expansion")
+    p.add_argument("--no-compress", action="store_true", help="Disable contextual compression")
+    p.add_argument("--ast-chunk", action="store_true", help="Enable AST-based chunking for Python files (requires --rebuild)")
+    p.add_argument("--no-multi-query", action="store_true", help="Disable multi-query decomposition")
     return p.parse_args()
 
 
@@ -53,6 +57,10 @@ def main() -> None:
         top_k=args.topk,
         use_reranker=not args.no_rerank,  # Invert the flag
         use_hybrid_search=not args.no_hybrid,  # Invert the flag
+        use_query_expansion=not args.no_expand,  # Invert the flag
+        use_compression=not args.no_compress,  # Invert the flag
+        use_ast_chunking=args.ast_chunk,
+        use_multi_query=not args.no_multi_query,
     )
 
     print(f"[+] Repo: {repo_root}")

@@ -47,8 +47,16 @@ def chunk_text(
     return chunks
 
 
-def chunk_files(repo_files, chunk_size: int = 1800, overlap: int = 250) -> List[Chunk]:
+def chunk_files(repo_files, chunk_size: int = 1800, overlap: int = 250, use_ast: bool = False) -> List[Chunk]:
     all_chunks: List[Chunk] = []
+    
+    if use_ast:
+        from .ast_chunker import ast_chunk_python
+    
     for rf in repo_files:
-        all_chunks.extend(chunk_text(rf.text, rf.path, chunk_size=chunk_size, overlap=overlap))
+        if use_ast and rf.path.endswith(".py"):
+            all_chunks.extend(ast_chunk_python(rf.text, rf.path, max_chunk_size=chunk_size))
+        else:
+            all_chunks.extend(chunk_text(rf.text, rf.path, chunk_size=chunk_size, overlap=overlap))
+    
     return all_chunks

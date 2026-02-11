@@ -14,6 +14,9 @@ from .retriever import retrieve, RetrievedChunk
 from .llm import LLMClient
 from .reranker import Reranker
 from .conversation import ConversationHistory
+from .query_expander import QueryExpander
+from .compressor import ContextCompressor
+from .multi_query import MultiQueryGenerator
 
 
 @dataclass
@@ -28,6 +31,10 @@ class QAEngine:
     use_reranker: bool = True  # Enable reranking by default
     use_conversation: bool = True  # Enable conversation history by default
     use_hybrid_search: bool = True  # Enable hybrid search by default
+    use_query_expansion: bool = True  # Enable query expansion by default
+    use_compression: bool = True  # Enable contextual compression by default
+    use_ast_chunking: bool = False  # Disable AST chunking by default (changes index)
+    use_multi_query: bool = True  # Enable multi-query retrieval by default
 
     index = None
     metadata: List[Dict] | None = None
@@ -35,10 +42,14 @@ class QAEngine:
     _reranker: Reranker | None = None
     _conversation: ConversationHistory | None = None
     _bm25_index: object | None = None  # BM25Index from hybrid_search
+    _query_expander: QueryExpander | None = None
+    _compressor: ContextCompressor | None = None
+    _multi_query: MultiQueryGenerator | None = None
 
     def build(self, force_rebuild: bool = False) -> None:
         repo_files = load_repo_files(self.repo_root)
-        chunks = chunk_files(repo_files, chunk_size=self.chunk_size, overlap=self.overlap)
+        chunks = chunk_files(repo_files, chunk_size=self.chunk_size, overlap=self.overlap,
+                             use_ast=self.use_ast_chunking)
 
         # Try cache first (fast path)
         dim = 768  # Google text-embedding-004
@@ -80,33 +91,78 @@ class QAEngine:
         # Retrieve more chunks if using reranker (will be filtered down)
         retrieve_k = self.top_k * 3 if self.use_reranker else self.top_k
         
-        # Use hybrid search if enabled and BM25 index exists
-        if self.use_hybrid_search and self._bm25_index is not None:
-            from .hybrid_search import hybrid_retrieve
-            chunks = hybrid_retrieve(
-                faiss_index=self.index,
-                bm25_index=self._bm25_index,
-                metadata=self.metadata,
-                embedder=self.embedder,
-                question=question,
-                top_k=retrieve_k if self.use_reranker else self.top_k,
-                retrieve_k=retrieve_k * 2,  # Get more candidates for RRF
-            )
+        # Decompose complex questions if multi-query is enabled
+        base_queries = [question]
+        if self.use_multi_query:
+            if self._multi_query is None:
+                self._multi_query = MultiQueryGenerator.from_llm_client(self.llm)
+            base_queries = self._multi_query.generate(question)
+        
+        # Expand each query if enabled
+        queries = []
+        if self.use_query_expansion:
+            if self._query_expander is None:
+                self._query_expander = QueryExpander.from_llm_client(self.llm)
+            for bq in base_queries:
+                queries.extend(self._query_expander.expand(bq))
         else:
-            # Standard vector-only retrieval
-            chunks = retrieve(
-                index=self.index,
-                metadata=self.metadata,
-                embedder=self.embedder,
-                question=question,
-                top_k=retrieve_k,
-            )
+            queries = base_queries
+        
+        # Deduplicate queries
+        seen_q = set()
+        unique_queries = []
+        for q in queries:
+            q_lower = q.strip().lower()
+            if q_lower not in seen_q:
+                seen_q.add(q_lower)
+                unique_queries.append(q)
+        queries = unique_queries
+        
+        # Retrieve for each query variant and deduplicate
+        all_chunks: List[RetrievedChunk] = []
+        seen_keys: set = set()
+        
+        for q in queries:
+            if self.use_hybrid_search and self._bm25_index is not None:
+                from .hybrid_search import hybrid_retrieve
+                q_chunks = hybrid_retrieve(
+                    faiss_index=self.index,
+                    bm25_index=self._bm25_index,
+                    metadata=self.metadata,
+                    embedder=self.embedder,
+                    question=q,
+                    top_k=retrieve_k if self.use_reranker else self.top_k,
+                    retrieve_k=retrieve_k * 2,
+                )
+            else:
+                q_chunks = retrieve(
+                    index=self.index,
+                    metadata=self.metadata,
+                    embedder=self.embedder,
+                    question=q,
+                    top_k=retrieve_k,
+                )
+            
+            # Deduplicate by (source, start_char, end_char)
+            for c in q_chunks:
+                key = (c.source, c.start_char, c.end_char)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    all_chunks.append(c)
+        
+        chunks = all_chunks
         
         # Rerank if enabled
         if self.use_reranker and len(chunks) > self.top_k:
             if self._reranker is None:
                 self._reranker = Reranker()
             chunks = self._reranker.rerank(question, chunks, top_k=self.top_k)
+        
+        # Compress chunks if enabled (extract only relevant lines)
+        if self.use_compression:
+            if self._compressor is None:
+                self._compressor = ContextCompressor.from_llm_client(self.llm)
+            chunks = self._compressor.compress(question, chunks)
         
         # Get conversation context if enabled
         conversation_context = ""
