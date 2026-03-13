@@ -1,0 +1,179 @@
+{
+  "name": "repo-aware-ai",
+  "displayName": "Repo-Aware AI",
+  "description": "Understands your codebase structure — semantic search, code radar, and repo mapping",
+  "version": "0.1.0",
+  "publisher": "repo-aware-ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SirjanSingh/repo-aware-ai"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "rag",
+    "codebase",
+    "semantic-search",
+    "code-understanding"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "icon": "resources/icon.png",
+  "contributes": {
+    "commands": [
+      {
+        "command": "repoAwareAI.askQuestion",
+        "title": "Ask Codebase",
+        "category": "Repo AI"
+      },
+      {
+        "command": "repoAwareAI.explainSelection",
+        "title": "Explain Selection",
+        "category": "Repo AI"
+      },
+      {
+        "command": "repoAwareAI.findRelated",
+        "title": "Find Related Code",
+        "category": "Repo AI"
+      },
+      {
+        "command": "repoAwareAI.explainRepo",
+        "title": "Explain This Repository",
+        "category": "Repo AI"
+      },
+      {
+        "command": "repoAwareAI.rebuildIndex",
+        "title": "Rebuild Index",
+        "category": "Repo AI"
+      },
+      {
+        "command": "repoAwareAI.openChat",
+        "title": "Open Chat Panel",
+        "category": "Repo AI"
+      },
+      {
+        "command": "repoAwareAI.openRepoMap",
+        "title": "Open Repo Map",
+        "category": "Repo AI"
+      }
+    ],
+    "configuration": {
+      "title": "Repo-Aware AI",
+      "properties": {
+        "repoAwareAI.googleApiKey": {
+          "type": "string",
+          "description": "Google API Key for Gemini (prefer SecretStorage — set via command palette)"
+        },
+        "repoAwareAI.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Path to Python executable"
+        },
+        "repoAwareAI.port": {
+          "type": "number",
+          "default": 8360,
+          "description": "Backend server port"
+        },
+        "repoAwareAI.topK": {
+          "type": "number",
+          "default": 6
+        },
+        "repoAwareAI.chunkSize": {
+          "type": "number",
+          "default": 1800
+        },
+        "repoAwareAI.useReranker": {
+          "type": "boolean",
+          "default": true
+        },
+        "repoAwareAI.useHybridSearch": {
+          "type": "boolean",
+          "default": true
+        },
+        "repoAwareAI.useQueryExpansion": {
+          "type": "boolean",
+          "default": true
+        },
+        "repoAwareAI.useCompression": {
+          "type": "boolean",
+          "default": true
+        },
+        "repoAwareAI.autoIndex": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-reindex on file save"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "repoAwareAI.explainSelection",
+          "when": "editorHasSelection",
+          "group": "repoai@1"
+        },
+        {
+          "command": "repoAwareAI.findRelated",
+          "group": "repoai@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "repoAwareAI.askQuestion",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      },
+      {
+        "command": "repoAwareAI.findRelated",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "repoAwareAI",
+          "title": "Repo AI",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "repoAwareAI": [
+        {
+          "type": "webview",
+          "id": "repoAwareAI.chatView",
+          "name": "Chat"
+        },
+        {
+          "id": "repoAwareAI.indexStatus",
+          "name": "Index Status",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "vscode:prepublish": "node esbuild.js --production",
+    "package": "npx vsce package",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.37",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.32.0",
+    "esbuild": "^0.20.2",
+    "typescript": "^5.9.3"
+  }
+}

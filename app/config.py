@@ -12,7 +12,7 @@ class Config:
     """Configuration for Google API services."""
     
     google_api_key: str
-    gemini_model: str = "models/gemini-2.0-flash"
+    gemini_model: str = "models/gemini-2.5-flash"
     embedding_model: str = "gemini-embedding-001"
     
     @classmethod
@@ -40,8 +40,8 @@ class Config:
         
         return cls(
             google_api_key=api_key,
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"),
-            embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-004"),
+            gemini_model=os.getenv("GEMINI_MODEL", "models/gemini-2.5-flash"),
+            embedding_model=os.getenv("EMBEDDING_MODEL", "gemini-embedding-001"),
         )
     
     def validate(self) -> None:

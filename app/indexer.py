@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import pickle
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+logger = logging.getLogger("rai.indexer")
 
 import faiss
 import numpy as np
@@ -170,12 +173,12 @@ def build_or_load_index(
         from .hybrid_search import BM25Index
         bm25_index = BM25Index.build(metadata)
         bm25_index.save(bm25_path)
-        print(f"[+] BM25 index saved to cache")
+        logger.info(f"[+] BM25 index saved to cache at {bm25_path}")
     
     # Helpful build diagnostics
     unique_sources = sorted({c.source for c in chunks})
-    print(f"[+] Indexed chunks: {len(chunks)}")
-    print(f"[+] Indexed files: {len(unique_sources)}")
-    print("[+] Sample files:", unique_sources[:10])
+    logger.info(f"[+] Indexed chunks: {len(chunks)}")
+    logger.info(f"[+] Indexed files: {len(unique_sources)}")
+    logger.debug(f"[+] Sample files: {unique_sources[:10]}")
 
     return index, metadata, cdir, bm25_index

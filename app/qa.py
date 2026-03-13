@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
+import time
 from typing import Dict, List, Optional, Tuple
 
 from tqdm import tqdm
+
+logger = logging.getLogger("rai.qa")
 
 from .loader import load_repo_files
 from .chunker import chunk_files, Chunk
@@ -84,6 +88,9 @@ class QAEngine:
         if self.index is None or self.metadata is None:
             raise RuntimeError("Index not built. Call build() first.")
 
+        logger.info(f"[QA] ask() called: question={question!r}")
+        t_overall = time.time()
+
         # Initialize conversation history if enabled
         if self.use_conversation and self._conversation is None:
             self._conversation = ConversationHistory()
@@ -94,17 +101,21 @@ class QAEngine:
         # Decompose complex questions if multi-query is enabled
         base_queries = [question]
         if self.use_multi_query:
+            t0 = time.time()
             if self._multi_query is None:
                 self._multi_query = MultiQueryGenerator.from_llm_client(self.llm)
             base_queries = self._multi_query.generate(question)
+            logger.info(f"[QA] multi_query: generated {len(base_queries)} sub-queries ({(time.time()-t0)*1000:.0f}ms)")
         
         # Expand each query if enabled
         queries = []
         if self.use_query_expansion:
+            t0 = time.time()
             if self._query_expander is None:
                 self._query_expander = QueryExpander.from_llm_client(self.llm)
             for bq in base_queries:
                 queries.extend(self._query_expander.expand(bq))
+            logger.info(f"[QA] query_expansion: expanded to {len(queries)} queries ({(time.time()-t0)*1000:.0f}ms)")
         else:
             queries = base_queries
         
@@ -122,6 +133,7 @@ class QAEngine:
         all_chunks: List[RetrievedChunk] = []
         seen_keys: set = set()
         
+        t0 = time.time()
         for q in queries:
             if self.use_hybrid_search and self._bm25_index is not None:
                 from .hybrid_search import hybrid_retrieve
@@ -151,25 +163,32 @@ class QAEngine:
                     all_chunks.append(c)
         
         chunks = all_chunks
+        logger.info(f"[QA] retrieval: found {len(chunks)} unique chunks ({(time.time()-t0)*1000:.0f}ms)")
         
         # Rerank if enabled
         if self.use_reranker and len(chunks) > self.top_k:
+            t0 = time.time()
             if self._reranker is None:
                 self._reranker = Reranker()
             chunks = self._reranker.rerank(question, chunks, top_k=self.top_k)
+            logger.info(f"[QA] reranking: filtered down to {len(chunks)} chunks ({(time.time()-t0)*1000:.0f}ms)")
         
         # Compress chunks if enabled (extract only relevant lines)
         if self.use_compression:
+            t0 = time.time()
             if self._compressor is None:
                 self._compressor = ContextCompressor.from_llm_client(self.llm)
             chunks = self._compressor.compress(question, chunks)
+            logger.info(f"[QA] compression: compressed {len(chunks)} chunks ({(time.time()-t0)*1000:.0f}ms)")
         
         # Get conversation context if enabled
         conversation_context = ""
         if self.use_conversation and self._conversation and not self._conversation.is_empty:
             conversation_context = self._conversation.get_context(include_sources=False)
 
+        t0 = time.time()
         answer = self.llm.answer(question, chunks, conversation_context)
+        logger.info(f"[QA] llm.answer: generated response ({(time.time()-t0)*1000:.0f}ms)")
 
         sources = []
         for c in chunks:
@@ -179,6 +198,7 @@ class QAEngine:
         if self.use_conversation and self._conversation:
             self._conversation.add_turn(question, answer, sources)
         
+        logger.info(f"[QA] total time: {(time.time()-t_overall):.2f}s")
         return answer, sources
     
     def clear_conversation(self) -> None:

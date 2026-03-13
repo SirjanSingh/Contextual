@@ -80,3 +80,18 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+
+# Frontend
+node_modules/
+dist/
+
+
+
+B_Optimal_Shifts.cpp
+EXTENSION_PLAN.prompt.md
+PLAN_Fixes.md
+app (2).zip
+
+claude_opus_creative_prompt.md
+
+plans for next day.md

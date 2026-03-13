@@ -53,7 +53,7 @@ def _format_context(chunks: List[RetrievedChunk], max_chars: int = 15000) -> str
 class LLMClient:
     """LLM client using Google Gemini API with new google.genai package."""
     
-    model: str = "models/gemini-2.0-flash"
+    model: str = "models/gemini-2.5-flash"
     temperature: float = 0.2
     _client: object = field(default=None, repr=False, init=False)
     

@@ -13,8 +13,8 @@ DEFAULT_IGNORE_DIRS: Set[str] = {
     "node_modules", "dist", "build", "out", "coverage",
     ".next", ".nuxt",
     ".venv", "venv", "env",
-    ".venv_new",
-    "debug_logs", "data"
+    ".venv_new", ".agent",
+    ".debug_logs", "data"
 }
 
 DEFAULT_IGNORE_FILES: Set[str] = {

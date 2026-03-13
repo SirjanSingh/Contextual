@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import time
+import logging
 from dataclasses import dataclass, field
 from typing import List
+
+logger = logging.getLogger("rai.embedder")
 
 import numpy as np
 
@@ -58,6 +61,9 @@ class Embedder:
         
         all_embeddings = []
         
+        logger.info(f"Embedding {len(texts)} texts in batches of {batch_size} (Google GenAI)")
+        t0 = time.time()
+        
         # Process texts in batches
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
@@ -88,6 +94,7 @@ class Embedder:
         norms = np.where(norms == 0, 1, norms)  # Avoid division by zero
         embeddings = embeddings / norms
         
+        logger.info(f"Embedded {len(texts)} texts in {(time.time() - t0):.2f}s")
         return embeddings
     
     def embed_query(self, query: str) -> np.ndarray:
