@@ -22,7 +22,7 @@ python main.py --repo . --topk 10 --chunk_size 2000 --temperature 0.1 --no-reran
 python dev_server.py --port 8360 --repo ./some-project
 
 # Run backend directly
-uvicorn app.server:app --host 127.0.0.1 --port 8360
+uvicorn repo_aware_ai.server:app --host 127.0.0.1 --port 8360
 ```
 
 ### Frontend (React)
@@ -64,20 +64,20 @@ Repository Files → Loader → Chunker → Embedder → Indexer → Retriever �
 
 | Stage | File | Notes |
 |-------|------|-------|
-| Loader | `app/loader.py` | Filters by extension; ignores `.git`, `node_modules`, `.venv`, `data/`, `debug_logs/` |
-| Chunker | `app/chunker.py`, `app/ast_chunker.py` | Default: 1800 chars / 250 overlap; AST mode for Python preserves function/class boundaries |
-| Embedder | `app/embedder.py` | Gemini embeddings, batched (max 100/batch) |
-| Indexer | `app/indexer.py` | FAISS CPU index; fingerprint-based cache (SHA256 of paths+mtime+size) → `data/index/<repo_id>/` |
-| Retriever | `app/retriever.py` | Cosine similarity over FAISS |
-| Hybrid Search | `app/hybrid_search.py` | BM25 + vector combined (optional) |
-| Reranker | `app/reranker.py` | cross-encoder/ms-marco-MiniLM-L-6-v2 |
-| Compressor | `app/compressor.py` | LLM extracts only question-relevant lines |
-| Query Expansion | `app/query_expander.py` | Generate synonym/related queries |
-| Multi-Query | `app/multi_query.py` | Decompose complex question into 3-5 sub-queries |
-| Conversation | `app/conversation.py` | Last 5 turns of history |
-| QA Orchestrator | `app/qa.py` | Wires all stages together |
+| Loader | `repo_aware_ai/loader.py` | Filters by extension; ignores `.git`, `node_modules`, `.venv`, `data/`, `debug_logs/` |
+| Chunker | `repo_aware_ai/chunker.py`, `repo_aware_ai/ast_chunker.py` | Default: 1800 chars / 250 overlap; AST mode for Python preserves function/class boundaries |
+| Embedder | `repo_aware_ai/embedder.py` | Gemini embeddings, batched (max 100/batch) |
+| Indexer | `repo_aware_ai/indexer.py` | FAISS CPU index; fingerprint-based cache (SHA256 of paths+mtime+size) → `data/index/<repo_id>/` |
+| Retriever | `repo_aware_ai/retriever.py` | Cosine similarity over FAISS |
+| Hybrid Search | `repo_aware_ai/hybrid_search.py` | BM25 + vector combined (optional) |
+| Reranker | `repo_aware_ai/reranker.py` | cross-encoder/ms-marco-MiniLM-L-6-v2 |
+| Compressor | `repo_aware_ai/compressor.py` | LLM extracts only question-relevant lines |
+| Query Expansion | `repo_aware_ai/query_expander.py` | Generate synonym/related queries |
+| Multi-Query | `repo_aware_ai/multi_query.py` | Decompose complex question into 3-5 sub-queries |
+| Conversation | `repo_aware_ai/conversation.py` | Last 5 turns of history |
+| QA Orchestrator | `repo_aware_ai/qa.py` | Wires all stages together |
 
-### Web Server (`app/server.py`)
+### Web Server (`repo_aware_ai/server.py`)
 
 FastAPI on port 8360. Key endpoints:
 - `POST /index/directory` — trigger indexing
@@ -102,12 +102,12 @@ React 18 + TypeScript + Vite + Tailwind CSS + Zustand. Entry: `src/main.tsx` →
 
 ## Critical Design Constraints
 
-**FAISS index / metadata alignment**: The FAISS vector index and the metadata list must stay 1:1 aligned. Any mismatch corrupts source attribution. Do not modify `app/indexer.py` in ways that could desync these.
+**FAISS index / metadata alignment**: The FAISS vector index and the metadata list must stay 1:1 aligned. Any mismatch corrupts source attribution. Do not modify `repo_aware_ai/indexer.py` in ways that could desync these.
 
 **Cache invalidation**: Fingerprint = SHA256(repo_path + sorted file paths + mtime_ns + size). Any file change forces a full index rebuild.
 
 **Path handling**: Internal paths use POSIX separators (`/`) relative to repo root. Windows paths must be converted with `.replace("\\", "/")` before storage.
 
-**LLM prompt discipline**: The system prompt in `app/llm.py` enforces strict context-only answers. The LLM must not hallucinate beyond retrieved chunks. Fallback: `"Not found in the retrieved repository context."` Required output format: answer bullets → evidence quotes → sources (`path/file.py:start_char-end_char`).
+**LLM prompt discipline**: The system prompt in `repo_aware_ai/llm.py` enforces strict context-only answers. The LLM must not hallucinate beyond retrieved chunks. Fallback: `"Not found in the retrieved repository context."` Required output format: answer bullets → evidence quotes → sources (`path/file.py:start_char-end_char`).
 
-**Debug logs**: `app/debug.py` writes JSON logs of retrieved chunks to `debug_logs/`. The loader explicitly ignores this directory to avoid indexing debug output.
+**Debug logs**: `repo_aware_ai/debug.py` writes JSON logs of retrieved chunks to `debug_logs/`. The loader explicitly ignores this directory to avoid indexing debug output.

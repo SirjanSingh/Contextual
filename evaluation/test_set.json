@@ -9,7 +9,7 @@
         "text-embedding-004",
         "vector"
       ],
-      "expected_sources": ["app/embedder.py"],
+      "expected_sources": ["repo_aware_ai/embedder.py"],
       "category": "direct"
     },
     {
@@ -22,21 +22,21 @@
         "cache",
         "fingerprint"
       ],
-      "expected_sources": ["app/indexer.py"],
+      "expected_sources": ["repo_aware_ai/indexer.py"],
       "category": "conceptual"
     },
     {
       "id": "q003",
       "question": "What happens when I run main.py with --rebuild?",
       "expected_answer_contains": ["force", "rebuild", "index", "embeddings"],
-      "expected_sources": ["main.py", "app/qa.py", "app/indexer.py"],
+      "expected_sources": ["main.py", "repo_aware_ai/qa.py", "repo_aware_ai/indexer.py"],
       "category": "multi-hop"
     },
     {
       "id": "q004",
       "question": "What LLM models are supported?",
       "expected_answer_contains": ["Gemini", "Google", "gemini"],
-      "expected_sources": ["app/llm.py", "app/config.py"],
+      "expected_sources": ["repo_aware_ai/llm.py", "repo_aware_ai/config.py"],
       "category": "direct"
     },
     {
@@ -48,14 +48,14 @@
         "files",
         "ignore"
       ],
-      "expected_sources": ["app/loader.py"],
+      "expected_sources": ["repo_aware_ai/loader.py"],
       "category": "direct"
     },
     {
       "id": "q006",
       "question": "What is the chunk size and overlap?",
       "expected_answer_contains": ["1800", "250", "chunk", "overlap"],
-      "expected_sources": ["main.py", "app/chunker.py"],
+      "expected_sources": ["main.py", "repo_aware_ai/chunker.py"],
       "category": "direct"
     },
     {
@@ -67,14 +67,14 @@
         "score",
         "accurate"
       ],
-      "expected_sources": ["app/reranker.py"],
+      "expected_sources": ["repo_aware_ai/reranker.py"],
       "category": "conceptual"
     },
     {
       "id": "q008",
       "question": "What is stored in the FAISS index?",
       "expected_answer_contains": ["vector", "embedding", "chunks", "index"],
-      "expected_sources": ["app/indexer.py"],
+      "expected_sources": ["repo_aware_ai/indexer.py"],
       "category": "conceptual"
     },
     {
@@ -86,7 +86,7 @@
         "turn",
         "context"
       ],
-      "expected_sources": ["app/conversation.py", "app/qa.py"],
+      "expected_sources": ["repo_aware_ai/conversation.py", "repo_aware_ai/qa.py"],
       "category": "conceptual"
     },
     {
@@ -98,7 +98,7 @@
         "key",
         "environment"
       ],
-      "expected_sources": ["app/config.py", "README.md"],
+      "expected_sources": ["repo_aware_ai/config.py", "README.md"],
       "category": "direct"
     },
     {
@@ -111,7 +111,7 @@
         "query",
         "top-k"
       ],
-      "expected_sources": ["app/retriever.py"],
+      "expected_sources": ["repo_aware_ai/retriever.py"],
       "category": "conceptual"
     },
     {
@@ -124,28 +124,28 @@
         "LLM",
         "chunks"
       ],
-      "expected_sources": ["app/qa.py"],
+      "expected_sources": ["repo_aware_ai/qa.py"],
       "category": "conceptual"
     },
     {
       "id": "q013",
       "question": "How are files chunked?",
       "expected_answer_contains": ["chunk", "split", "overlap", "size"],
-      "expected_sources": ["app/chunker.py"],
+      "expected_sources": ["repo_aware_ai/chunker.py"],
       "category": "direct"
     },
     {
       "id": "q014",
       "question": "What happens after chunks are retrieved?",
       "expected_answer_contains": ["LLM", "answer", "context", "question"],
-      "expected_sources": ["app/llm.py", "app/qa.py"],
+      "expected_sources": ["repo_aware_ai/llm.py", "repo_aware_ai/qa.py"],
       "category": "multi-hop"
     },
     {
       "id": "q015",
       "question": "How does hybrid search combine BM25 and vector search?",
       "expected_answer_contains": ["hybrid", "BM25", "vector", "RRF", "fusion"],
-      "expected_sources": ["app/hybrid_search.py"],
+      "expected_sources": ["repo_aware_ai/hybrid_search.py"],
       "category": "conceptual"
     }
   ]

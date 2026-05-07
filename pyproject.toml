@@ -1,0 +1,119 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "repo-aware-ai"
+version = "0.1.0"
+description = "Talk to your codebase: a local RAG assistant that retrieves code chunks and answers via Google Gemini. Includes CLI, web app, and VS Code extension."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Sirjan Singh" }]
+keywords = [
+  "rag",
+  "code-search",
+  "retrieval-augmented-generation",
+  "gemini",
+  "embeddings",
+  "vscode-extension",
+  "developer-tools",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Core runtime dependencies. Default install gives a working CLI + web server.
+# Heavier ML/graph features live behind extras (see [project.optional-dependencies]).
+dependencies = [
+  "google-genai>=0.3.0",
+  "faiss-cpu>=1.7.4",
+  "numpy>=1.24",
+  "fastapi>=0.104.0",
+  "uvicorn[standard]>=0.24.0",
+  "python-multipart>=0.0.6",
+  "rank-bm25>=0.2.2",
+  "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+# Cross-encoder reranker (heavy; ~500MB with model download on first use)
+reranker = ["sentence-transformers>=2.2"]
+
+# Repo-map: tree-sitter parsing + community detection
+graph = [
+  "tree-sitter>=0.21.0",
+  "tree-sitter-python>=0.25.0",
+  "tree-sitter-javascript>=0.25.0",
+  "tree-sitter-typescript>=0.23.0",
+  "python-igraph>=0.11.0",
+]
+
+# Everything (recommended for full feature set)
+all = [
+  "repo-aware-ai[reranker]",
+  "repo-aware-ai[graph]",
+]
+
+# Development & testing
+dev = [
+  "pytest>=7.4",
+  "pytest-asyncio>=0.21",
+  "httpx>=0.25",
+  "ruff>=0.4",
+  "mypy>=1.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/SirjanSingh/repo-aware-ai"
+Repository = "https://github.com/SirjanSingh/repo-aware-ai"
+Issues = "https://github.com/SirjanSingh/repo-aware-ai/issues"
+
+[project.scripts]
+# Interactive CLI Q&A loop
+repo-aware-ai = "main:main"
+# FastAPI dev server (used by the VS Code extension as a sidecar)
+repo-aware-ai-server = "dev_server:main"
+
+# ----------------------------------------------------------------------------
+# Setuptools configuration
+# ----------------------------------------------------------------------------
+[tool.setuptools]
+py-modules = ["main", "dev_server"]
+
+[tool.setuptools.packages.find]
+include = ["repo_aware_ai*"]
+exclude = ["tests*", "evaluation*", "docs*", "frontend*", "extension*"]
+
+# ----------------------------------------------------------------------------
+# Tooling configuration
+# ----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [".venv", ".venv_new", "data", "debug_logs", "docs/archive", "tmp", "frontend", "extension"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+exclude = ["docs/archive", "evaluation"]

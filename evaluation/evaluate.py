@@ -8,9 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
-from app.embedder import Embedder
-from app.llm import LLMClient
-from app.qa import QAEngine
+from repo_aware_ai.embedder import Embedder
+from repo_aware_ai.llm import LLMClient
+from repo_aware_ai.qa import QAEngine
 from evaluation.metrics import calculate_all_metrics
 
 

@@ -79,12 +79,12 @@ def main():
 
     import uvicorn
     uvicorn.run(
-        "app.server:app",
+        "repo_aware_ai.server:app",
         host=args.host,
         port=args.port,
         reload=not args.no_reload,
         log_level="info",
-        reload_dirs=["app"] if not args.no_reload else None,
+        reload_dirs=["repo_aware_ai"] if not args.no_reload else None,
     )
 
 

@@ -53,7 +53,7 @@ Example:
   "id": "q001",
   "question": "What does the Embedder class do?",
   "expected_answer_contains": ["embed", "Google AI", "text-embedding-004"],
-  "expected_sources": ["app/embedder.py"],
+  "expected_sources": ["repo_aware_ai/embedder.py"],
   "category": "direct"
 }
 ```

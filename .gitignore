@@ -55,8 +55,6 @@ debug_logs/
 logs/
 
 # Test files
-test_models.py
-test_api.py
 *.test.py
 
 # Secrets & Config
@@ -65,10 +63,6 @@ test_api.py
 !.env.example
 *.key
 *.pem
-
-# Project specific
-.github/
-.agent/
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
@@ -88,12 +82,9 @@ dist/
 # Local dev scratch
 tmp/
 .claude/
+.agent/
 
+# Old artifacts
 B_Optimal_Shifts.cpp
-EXTENSION_PLAN.prompt.md
-PLAN_Fixes.md
 app (2).zip
-
-claude_opus_creative_prompt.md
-
-plans for next day.md
+*.vsix

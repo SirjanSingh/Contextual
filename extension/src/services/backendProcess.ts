@@ -1,6 +1,6 @@
 /**
  * Spawns and manages the Python sidecar backend process.
- * - Starts: python -m uvicorn app.server:app --port {PORT} --host 127.0.0.1
+ * - Starts: python -m uvicorn repo_aware_ai.server:app --port {PORT} --host 127.0.0.1
  * - Sets: GOOGLE_API_KEY, RAI_PORT env vars
  * - Monitors: stdout/stderr → VS Code output channel
  * - Health check: polls /health every 500ms until ready (max 30s)
@@ -71,7 +71,7 @@ export class BackendProcess {
     };
 
     this.outputChannel.appendLine(
-      `[BackendProcess] Starting: ${pythonPath} -m uvicorn app.server:app --port ${this.port} --host 127.0.0.1`,
+      `[BackendProcess] Starting: ${pythonPath} -m uvicorn repo_aware_ai.server:app --port ${this.port} --host 127.0.0.1`,
     );
     this.outputChannel.appendLine(`[BackendProcess] Root: ${this.backendRoot}`);
 
@@ -80,7 +80,7 @@ export class BackendProcess {
       [
         "-m",
         "uvicorn",
-        "app.server:app",
+        "repo_aware_ai.server:app",
         "--port",
         String(this.port),
         "--host",
