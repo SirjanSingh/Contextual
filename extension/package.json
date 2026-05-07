@@ -63,6 +63,16 @@
         "command": "repoAwareAI.openRepoMap",
         "title": "Open Repo Map",
         "category": "Repo AI"
+      },
+      {
+        "command": "repoAwareAI.setApiKey",
+        "title": "Set API Key",
+        "category": "Repo AI"
+      },
+      {
+        "command": "repoAwareAI.showLogs",
+        "title": "Show Backend Logs",
+        "category": "Repo AI"
       }
     ],
     "configuration": {
@@ -70,12 +80,12 @@
       "properties": {
         "repoAwareAI.googleApiKey": {
           "type": "string",
-          "description": "Google API Key for Gemini (prefer SecretStorage — set via command palette)"
+          "description": "Google API key for Gemini. Prefer the 'Repo AI: Set API Key' command — it stores the key in VS Code SecretStorage and won't leak into settings exports."
         },
         "repoAwareAI.pythonPath": {
           "type": "string",
           "default": "python",
-          "description": "Path to Python executable"
+          "description": "Path to a system Python interpreter (>= 3.10) used to bootstrap the extension's private venv. Leave as 'python' on most systems."
         },
         "repoAwareAI.port": {
           "type": "number",
@@ -153,11 +163,6 @@
           "type": "webview",
           "id": "repoAwareAI.chatView",
           "name": "Chat"
-        },
-        {
-          "id": "repoAwareAI.indexStatus",
-          "name": "Index Status",
-          "type": "webview"
         }
       ]
     }

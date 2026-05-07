@@ -2,69 +2,105 @@
  * Main extension entry point.
  *
  * Activation order:
- *  1. Check for Google API key (prompt if missing)
- *  2. Check Python + install requirements if needed
- *  3. Spawn Python sidecar backend
- *  4. Wait for /health
- *  5. Index workspace via /index/directory
- *  6. Register all commands, providers, views
- *  7. Start status bar polling
- *
- * Deactivation: kill backend, dispose all providers
+ *   1. Resolve API key (SecretStorage, settings, env, or prompt user).
+ *   2. Bootstrap a Python venv with the `repo_aware_ai` package installed.
+ *   3. Spawn the backend sidecar and wait for /health.
+ *   4. Auto-index the workspace.
+ *   5. Register commands, providers, views.
+ *   6. Start status bar polling.
  */
 
-import * as vscode from "vscode";
 import * as path from "path";
-import * as fs from "fs";
+import * as vscode from "vscode";
 
-import { BackendProcess } from "./services/backendProcess";
-import { IndexManager } from "./services/indexManager";
-import { getExtensionConfig } from "./services/cacheManager";
-import { StatusBar } from "./views/statusBar";
-import { ChatPanel } from "./views/chatPanel";
-import { RepoMapPanel } from "./views/repoMapPanel";
-import { CodeLensProvider } from "./providers/codeLensProvider";
-import { HoverProvider } from "./providers/hoverProvider";
 import { registerAskQuestion } from "./commands/askQuestion";
+import { registerExplainRepo } from "./commands/explainRepo";
 import { registerExplainSelection } from "./commands/explainSelection";
 import { registerFindRelated } from "./commands/findRelated";
-import { registerExplainRepo } from "./commands/explainRepo";
 import { registerRebuildIndex } from "./commands/rebuildIndex";
+import { OUTPUT_CHANNEL_NAME } from "./constants";
+import { CodeLensProvider } from "./providers/codeLensProvider";
+import { HoverProvider } from "./providers/hoverProvider";
+import { BackendBootstrap } from "./services/backendBootstrap";
+import { BackendProcess, loadApiKey } from "./services/backendProcess";
+import { getExtensionConfig } from "./services/cacheManager";
+import { IndexManager } from "./services/indexManager";
+import { ChatPanel } from "./views/chatPanel";
+import { RepoMapPanel } from "./views/repoMapPanel";
+import { StatusBar } from "./views/statusBar";
 
 let backendProcess: BackendProcess | null = null;
+let outputChannel: vscode.OutputChannel | null = null;
 
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
-  // ── 1. Resolve backend root (extension install dir → parent of `extension/`) ──
-  const extensionDir = context.extensionPath;
-  // In dev: extensionDir = …/repo-aware-ai/extension → parent = repo-aware-ai
-  // In production: extension ships with backend/ sibling folder
-  const backendRoot = _resolveBackendRoot(extensionDir);
+  outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+  context.subscriptions.push(outputChannel);
 
-  // ── 2. Ensure API key ──
+  // Always-available command, even if startup fails.
+  context.subscriptions.push(
+    vscode.commands.registerCommand("repoAwareAI.showLogs", () => {
+      outputChannel?.show(true);
+    }),
+  );
+
+  // ── 1. API key ──
   const config = getExtensionConfig();
-  let apiKey = config.googleApiKey;
-
+  let apiKey = config.googleApiKey || (await loadApiKey(context));
   if (!apiKey) {
     apiKey = await _promptApiKey(context);
-    if (!apiKey) {
-      void vscode.window.showWarningMessage(
-        "Repo AI: No Google API key set. Backend will not start.",
-      );
-      return;
-    }
+  }
+  if (!apiKey) {
+    void vscode.window.showWarningMessage(
+      "Repo AI: no Google API key set — run 'Repo AI: Set API Key' to start the backend.",
+    );
+    _registerSetApiKey(context);
+    return;
   }
 
-  // ── 3. Ensure Python requirements ──
-  await _ensureRequirements(backendRoot, config.pythonPath);
+  // ── 2 + 3. Bootstrap Python + start backend ──
+  let pythonExecutable: string;
+  try {
+    pythonExecutable = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Repo AI",
+        cancellable: false,
+      },
+      async (progress) => {
+        const bootstrap = new BackendBootstrap(context, outputChannel!);
+        progress.report({ message: "Setting up Python environment..." });
+        const result = await bootstrap.ensure(progress);
+        return result.pythonExecutable;
+      },
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    outputChannel.appendLine(`[activate] bootstrap failed: ${msg}`);
+    void vscode.window
+      .showErrorMessage(
+        `Repo AI: setup failed — ${msg}`,
+        "Show logs",
+      )
+      .then((choice) => {
+        if (choice === "Show logs") {
+          outputChannel?.show(true);
+        }
+      });
+    return;
+  }
 
-  // ── 4. Start the Python sidecar ──
-  // globalStorageUri is VS Code's per-extension persistent storage — writable,
-  // survives updates, and isolated from the user's workspace.
   const dataDir = context.globalStorageUri.fsPath;
-  backendProcess = new BackendProcess(backendRoot, config.port, dataDir);
-  context.subscriptions.push({ dispose: () => backendProcess?.dispose() });
+  backendProcess = new BackendProcess({
+    pythonExecutable,
+    port: config.port,
+    dataDir,
+    outputChannel,
+  });
+  context.subscriptions.push({
+    dispose: () => backendProcess?.dispose(),
+  });
 
   await vscode.window.withProgress(
     {
@@ -77,16 +113,16 @@ export async function activate(
       try {
         await backendProcess!.start(apiKey!);
       } catch (e) {
-        void vscode.window.showErrorMessage(
-          `Repo AI: Backend failed to start — ${String(e)}`,
-        );
-        backendProcess?.showOutput();
+        const msg = e instanceof Error ? e.message : String(e);
+        void vscode.window
+          .showErrorMessage(`Repo AI: backend failed to start — ${msg}`, "Show logs")
+          .then((choice) => choice === "Show logs" && outputChannel?.show(true));
         return;
       }
 
       const client = backendProcess!.getClient();
 
-      // ── 5. Index workspace ──
+      // ── 4. Auto-index workspace ──
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (workspaceFolders && workspaceFolders.length > 0) {
         const rootPath = workspaceFolders[0].uri.fsPath;
@@ -95,17 +131,17 @@ export async function activate(
           await client.indexDirectory(rootPath);
         } catch (e) {
           void vscode.window.showWarningMessage(
-            `Repo AI: Auto-index failed — ${String(e)}`,
+            `Repo AI: auto-index failed — ${String(e)}. Run 'Repo AI: Rebuild Index' once ready.`,
           );
         }
       }
 
-      // ── 6. Status bar ──
+      // ── 5. Status bar ──
       const statusBar = new StatusBar(client);
       context.subscriptions.push({ dispose: () => statusBar.dispose() });
       statusBar.startPolling();
 
-      // ── 7. Chat panel ──
+      // ── 6. Chat panel ──
       const { provider: chatProvider, disposable: chatDisposable } =
         ChatPanel.register(context, client);
       context.subscriptions.push(chatDisposable);
@@ -114,34 +150,36 @@ export async function activate(
         question: string,
         answer: string,
         sources: string[],
-      ) => {
-        chatProvider.showAnswer(question, answer, sources);
-      };
+      ) => chatProvider.showAnswer(question, answer, sources);
 
-      // ── 8. Register commands ──
+      // ── 7. Commands ──
       context.subscriptions.push(
         registerAskQuestion(context, client, showChat),
         registerExplainSelection(context, client, showChat),
         registerFindRelated(context, client),
         registerExplainRepo(context, client),
         registerRebuildIndex(context, client, statusBar),
-
-        // Open chat command
-        vscode.commands.registerCommand("repoAwareAI.openChat", () => {
-          vscode.commands.executeCommand("repoAwareAI.chatView.focus");
-        }),
-
-        // Open repo map command
-        vscode.commands.registerCommand("repoAwareAI.openRepoMap", () => {
-          RepoMapPanel.createOrShow(context, client);
+        vscode.commands.registerCommand("repoAwareAI.openChat", () =>
+          vscode.commands.executeCommand("repoAwareAI.chatView.focus"),
+        ),
+        vscode.commands.registerCommand("repoAwareAI.openRepoMap", () =>
+          RepoMapPanel.createOrShow(context, client),
+        ),
+        vscode.commands.registerCommand("repoAwareAI.setApiKey", async () => {
+          const key = await _promptApiKey(context);
+          if (key) {
+            void vscode.window.showInformationMessage(
+              "Repo AI: API key saved. Reload the window for it to take effect.",
+            );
+          }
         }),
       );
 
-      // ── 9. Register CodeLens + Hover providers ──
+      // ── 8. Code intelligence providers ──
       context.subscriptions.push(...CodeLensProvider.register(client));
       context.subscriptions.push(...HoverProvider.register(client));
 
-      // ── 10. Auto-index on save ──
+      // ── 9. Auto-index on save ──
       const indexManager = new IndexManager(client);
       indexManager.enable();
       context.subscriptions.push({ dispose: () => indexManager.dispose() });
@@ -152,68 +190,46 @@ export async function activate(
 export function deactivate(): void {
   backendProcess?.dispose();
   backendProcess = null;
+  outputChannel?.dispose();
+  outputChannel = null;
 }
 
-// ── Helpers ──
-
-function _resolveBackendRoot(extensionDir: string): string {
-  // Try extensionDir itself (when extensionPath == repo root in dev mode)
-  if (fs.existsSync(path.join(extensionDir, "app", "server.py"))) {
-    return extensionDir;
-  }
-  // Try ../  (dev workspace: extension/ is inside repo-aware-ai/)
-  const parentDir = path.dirname(extensionDir);
-  if (fs.existsSync(path.join(parentDir, "app", "server.py"))) {
-    return parentDir;
-  }
-  // Try ./backend/  (packaged extension ships backend alongside)
-  const bundledBackend = path.join(extensionDir, "backend");
-  if (fs.existsSync(path.join(bundledBackend, "app", "server.py"))) {
-    return bundledBackend;
-  }
-  // Fallback: workspace root
-  const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  return wsRoot ?? extensionDir;
-}
+// ──────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────
 
 async function _promptApiKey(
   context: vscode.ExtensionContext,
 ): Promise<string | undefined> {
   const key = await vscode.window.showInputBox({
-    prompt: "Enter your Google API Key (for Gemini)",
+    prompt: "Enter your Google API key for Gemini",
     placeHolder: "AIza...",
     password: true,
     ignoreFocusOut: true,
+    validateInput: (v) =>
+      v && v.trim().length > 8 ? null : "API key looks too short — paste the full value",
   });
   if (!key) {
     return undefined;
   }
-  // Store in SecretStorage (not settings.json)
   await context.secrets.store("googleApiKey", key);
-  // Also set in config for this session
+  // Mirror into settings so backendClient/loadApiKey paths agree, but only at
+  // the User scope so we never leak into a workspace's settings.json.
   await vscode.workspace
     .getConfiguration("repoAwareAI")
     .update("googleApiKey", key, vscode.ConfigurationTarget.Global);
   return key;
 }
 
-async function _ensureRequirements(
-  backendRoot: string,
-  pythonPath: string,
-): Promise<void> {
-  const reqFile = path.join(backendRoot, "requirements.txt");
-  if (!fs.existsSync(reqFile)) {
-    return; // Nothing to install
-  }
-
-  // Run pip install silently in background
-  const { execFile } = await import("child_process");
-  return new Promise((resolve) => {
-    execFile(
-      pythonPath,
-      ["-m", "pip", "install", "-r", reqFile, "--quiet"],
-      { cwd: backendRoot },
-      () => resolve(), // ignore errors — user may have already installed
-    );
-  });
+function _registerSetApiKey(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand("repoAwareAI.setApiKey", async () => {
+      const key = await _promptApiKey(context);
+      if (key) {
+        void vscode.window.showInformationMessage(
+          "Repo AI: API key saved. Reload the window to start the backend.",
+        );
+      }
+    }),
+  );
 }

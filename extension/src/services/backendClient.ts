@@ -1,7 +1,13 @@
 /**
- * HTTP + WebSocket client for the Python sidecar backend.
- * All REST methods throw on non-2xx responses.
+ * HTTP + SSE client for the Python sidecar backend.
+ *
+ * All REST methods throw on non-2xx responses. The streaming method yields
+ * structured events so callers don't have to parse SSE themselves.
  */
+
+// ──────────────────────────────────────────────
+// Response types
+// ──────────────────────────────────────────────
 
 export interface HealthResponse {
   status: string;
@@ -37,36 +43,7 @@ export interface IndexStatus {
   info: Record<string, unknown>;
 }
 
-export interface GraphNode {
-  id: string;
-  label: string;
-  type: string;
-  chunkCount: number;
-}
-
-export interface GraphEdge {
-  source: string;
-  target: string;
-  type: string;
-}
-
-export interface DependencyGraph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
-
-export interface Cluster {
-  id: number;
-  centroid_label: string;
-  files: string[];
-  size: number;
-}
-
-export interface ClusterResponse {
-  clusters: Cluster[];
-}
-
-// ── Repo Map types ──────────────────────────────────────────
+// ── Repo Map types ────────────────────────────
 
 export interface RepoMapCommunity {
   id: string;
@@ -159,24 +136,19 @@ export interface SymbolDetail {
   callees: SymbolRelationship[];
 }
 
-export interface NeighborhoodNode {
-  id: string;
-  label: string;
-  name: string;
-  file_path: string;
-}
+// ──────────────────────────────────────────────
+// Streaming events
+// ──────────────────────────────────────────────
 
-export interface NeighborhoodEdge {
-  source: string;
-  target: string;
-  type: string;
-  confidence: number;
-}
+export type StreamEvent =
+  | { kind: "chunk"; text: string }
+  | { kind: "sources"; sources: string[] }
+  | { kind: "done" }
+  | { kind: "error"; message: string };
 
-export interface NeighborhoodGraph {
-  nodes: NeighborhoodNode[];
-  edges: NeighborhoodEdge[];
-}
+// ──────────────────────────────────────────────
+// Client
+// ──────────────────────────────────────────────
 
 export class BackendClient {
   constructor(private baseUrl: string) {}
@@ -209,6 +181,7 @@ export class BackendClient {
     }
   }
 
+  // ── Lifecycle ──
   async health(): Promise<HealthResponse> {
     return this._fetch<HealthResponse>("/health", "GET", undefined, 5_000);
   }
@@ -229,15 +202,19 @@ export class BackendClient {
   }
 
   async rebuildIndex(): Promise<void> {
-    await this._fetch("/index/rebuild", "POST", undefined, 120_000);
+    await this._fetch("/index/rebuild", "POST", undefined, 300_000);
   }
 
+  // ── Query ──
   async query(question: string): Promise<QueryResponse> {
-    return this._fetch<QueryResponse>("/query", "POST", { question }, 60_000);
+    return this._fetch<QueryResponse>("/query", "POST", { question }, 120_000);
   }
 
-  /** SSE streaming query. Yields token chunks as strings. */
-  async *queryStream(question: string): AsyncGenerator<string> {
+  /**
+   * Stream an answer from /query/stream as a sequence of structured events.
+   * The iterator completes after a `done` event or an `error` event.
+   */
+  async *queryStream(question: string): AsyncGenerator<StreamEvent> {
     const res = await fetch(`${this.baseUrl}/query/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -245,36 +222,93 @@ export class BackendClient {
     });
 
     if (!res.ok || !res.body) {
-      throw new Error(`Stream request failed: ${res.status}`);
+      const text = await res.text().catch(() => res.statusText);
+      yield { kind: "error", message: `Stream request failed: ${res.status} ${text}` };
+      return;
     }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let pendingEvent: string | null = null;
+    let pendingDataLines: string[] = [];
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
+    const flush = (): StreamEvent | null => {
+      if (pendingDataLines.length === 0 && !pendingEvent) {
+        return null;
       }
-      buffer += decoder.decode(value, { stream: true });
+      const data = pendingDataLines.join("\n");
+      const ev = pendingEvent;
+      pendingEvent = null;
+      pendingDataLines = [];
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          yield line.slice(6);
+      if (ev === "sources") {
+        try {
+          const sources = JSON.parse(data) as string[];
+          return { kind: "sources", sources };
+        } catch {
+          return { kind: "error", message: `bad sources payload: ${data}` };
         }
+      }
+      if (ev === "done") {
+        return { kind: "done" };
+      }
+      if (ev === "error") {
+        return { kind: "error", message: data };
+      }
+      // Default event: a token chunk.
+      return { kind: "chunk", text: data };
+    };
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (line === "") {
+            // Empty line marks the end of an SSE event.
+            const ev = flush();
+            if (ev) {
+              yield ev;
+              if (ev.kind === "done" || ev.kind === "error") {
+                return;
+              }
+            }
+          } else if (line.startsWith("event:")) {
+            pendingEvent = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            pendingDataLines.push(line.slice(5).replace(/^\s/, ""));
+          }
+          // ignore other lines (id:, retry:, comments)
+        }
+      }
+      // Final flush in case the stream ended without a trailing blank line.
+      const tail = flush();
+      if (tail) {
+        yield tail;
+      }
+    } finally {
+      try {
+        reader.releaseLock();
+      } catch {
+        // ignore
       }
     }
   }
 
+  // ── Search ──
   async search(query: string, topK = 8): Promise<ChunkResult[]> {
     const res = await this._fetch<SearchResponse>(
       "/search",
       "POST",
-      { question: query },
+      { question: query, top_k: topK },
       10_000,
     );
     return res.chunks.slice(0, topK);
@@ -294,33 +328,31 @@ export class BackendClient {
     await this._fetch("/repository/clear", "DELETE");
   }
 
-  async dependencyGraph(): Promise<DependencyGraph> {
-    return this._fetch<DependencyGraph>("/graph/dependencies");
-  }
-
-  async semanticClusters(): Promise<ClusterResponse> {
-    return this._fetch<ClusterResponse>("/graph/clusters");
-  }
-
+  // ── Repo map ──
   async repoMapSummary(): Promise<RepoMapSummary> {
-    return this._fetch<RepoMapSummary>("/graph/repo-map", "GET", undefined, 15_000);
+    return this._fetch<RepoMapSummary>(
+      "/graph/repo-map",
+      "GET",
+      undefined,
+      15_000,
+    );
   }
 
   async communityDetail(id: string): Promise<CommunityDetail> {
-    return this._fetch<CommunityDetail>(`/graph/community/${encodeURIComponent(id)}`);
+    return this._fetch<CommunityDetail>(
+      `/graph/community/${encodeURIComponent(id)}`,
+    );
   }
 
   async processDetail(id: string): Promise<ProcessDetail> {
-    return this._fetch<ProcessDetail>(`/graph/process/${encodeURIComponent(id)}`);
+    return this._fetch<ProcessDetail>(
+      `/graph/process/${encodeURIComponent(id)}`,
+    );
   }
 
   async symbolDetail(id: string): Promise<SymbolDetail> {
-    return this._fetch<SymbolDetail>(`/graph/symbol/${encodeURIComponent(id)}`);
-  }
-
-  async neighborhood(id: string, hops = 2): Promise<NeighborhoodGraph> {
-    return this._fetch<NeighborhoodGraph>(
-      `/graph/neighborhood/${encodeURIComponent(id)}?hops=${hops}`,
+    return this._fetch<SymbolDetail>(
+      `/graph/symbol/${encodeURIComponent(id)}`,
     );
   }
 }

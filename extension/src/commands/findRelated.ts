@@ -61,28 +61,44 @@ export function registerFindRelated(
               return;
             }
 
-            // Open file at chunk position
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            const sourcePath = picked.chunk.source;
+            // Open file at chunk position. Backend always emits POSIX
+            // separators, so normalise once and try workspace-relative first.
+            const sourcePath = picked.chunk.source.replace(/\\/g, "/");
+            const folders = vscode.workspace.workspaceFolders ?? [];
 
-            // Try to find the actual file
-            const uris = await vscode.workspace.findFiles(
-              `**/${sourcePath.replace(/\\/g, "/")}`,
-              "**/node_modules/**",
-              1,
-            );
-
-            const fileUri =
-              uris.length > 0 ? uris[0] : vscode.Uri.file(sourcePath);
+            let fileUri: vscode.Uri | undefined;
+            for (const folder of folders) {
+              const candidate = vscode.Uri.joinPath(folder.uri, sourcePath);
+              try {
+                await vscode.workspace.fs.stat(candidate);
+                fileUri = candidate;
+                break;
+              } catch {
+                // not in this folder; try next
+              }
+            }
+            if (!fileUri) {
+              const uris = await vscode.workspace.findFiles(
+                `**/${sourcePath}`,
+                "**/node_modules/**",
+                1,
+              );
+              fileUri = uris[0];
+            }
+            if (!fileUri) {
+              void vscode.window.showWarningMessage(
+                `Repo AI: could not open ${sourcePath}`,
+              );
+              return;
+            }
 
             const doc = await vscode.workspace.openTextDocument(fileUri);
             const ed = await vscode.window.showTextDocument(doc, {
               preview: true,
             });
-
-            // Scroll to approximate position via char offset
-            const charOffset = picked.chunk.start_char;
-            const pos = doc.positionAt(charOffset);
+            const pos = doc.positionAt(
+              Math.min(picked.chunk.start_char, doc.getText().length),
+            );
             ed.revealRange(
               new vscode.Range(pos, pos),
               vscode.TextEditorRevealType.InCenter,

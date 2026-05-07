@@ -1,11 +1,22 @@
 /**
  * Chat panel — WebviewViewProvider for the sidebar chat UI.
- * Plain HTML + vanilla JS (no React) for minimal bundle impact.
- * Streams answers from /query/stream using SSE.
+ *
+ * Plain HTML + vanilla JS to keep the extension bundle small.
+ *
+ * Features:
+ *   - Live token streaming via SSE from /query/stream.
+ *   - Click a source citation to jump to the file at the chunk's start line.
+ *   - Surfaces backend errors as inline messages instead of swallowing them.
  */
 
 import * as vscode from "vscode";
 import { BackendClient } from "../services/backendClient";
+
+interface OutgoingMessage {
+  type: "ask" | "clear" | "openSource";
+  question?: string;
+  source?: string;
+}
 
 export class ChatPanel implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
@@ -38,17 +49,19 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     webviewView.webview.html = this._getHtml();
 
     webviewView.webview.onDidReceiveMessage(
-      async (msg: { type: string; question?: string }) => {
+      async (msg: OutgoingMessage) => {
         if (msg.type === "ask" && msg.question) {
-          await this._handleQuestion(msg.question);
+          await this._handleQuestionStream(msg.question);
         } else if (msg.type === "clear") {
           this._post({ type: "clear" });
+        } else if (msg.type === "openSource" && msg.source) {
+          await this._openSource(msg.source);
         }
       },
     );
   }
 
-  /** Show a question+answer pair in the chat (called from askQuestion command). */
+  /** Show a question+answer pair from outside (e.g. askQuestion command). */
   showAnswer(question: string, answer: string, sources: string[]): void {
     this._ensureVisible();
     this._post({ type: "answer", question, answer, sources });
@@ -58,19 +71,81 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     this.view?.show(true);
   }
 
-  private async _handleQuestion(question: string): Promise<void> {
-    this._post({ type: "thinking", question });
+  /** Stream the answer token-by-token and finish with a sources event. */
+  private async _handleQuestionStream(question: string): Promise<void> {
+    this._post({ type: "stream-start", question });
     try {
-      const res = await this.client.query(question);
-      this._post({
-        type: "answer",
-        question,
-        answer: res.answer,
-        sources: res.sources,
-      });
+      const stream = this.client.queryStream(question);
+      for await (const event of stream) {
+        if (event.kind === "chunk") {
+          this._post({ type: "stream-token", text: event.text });
+        } else if (event.kind === "sources") {
+          this._post({ type: "stream-sources", sources: event.sources });
+        } else if (event.kind === "error") {
+          this._post({ type: "error", message: event.message });
+          return;
+        }
+      }
+      this._post({ type: "stream-end" });
     } catch (e) {
       this._post({ type: "error", message: String(e) });
     }
+  }
+
+  /**
+   * Open a source citation like `path/to/file.py:1234-2000`. The numbers are
+   * character offsets — we convert them to a line position once the file is
+   * open.
+   */
+  private async _openSource(source: string): Promise<void> {
+    const match = source.match(/^(.*?)(?::(\d+)-(\d+))?$/);
+    if (!match) {
+      return;
+    }
+    const relPath = match[1].replace(/\\/g, "/");
+    const startChar = match[2] ? parseInt(match[2], 10) : 0;
+
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return;
+    }
+
+    let uri: vscode.Uri | undefined;
+    // Try relative-to-workspace first (fast, no filesystem walk).
+    for (const folder of folders) {
+      const candidate = vscode.Uri.joinPath(folder.uri, relPath);
+      try {
+        await vscode.workspace.fs.stat(candidate);
+        uri = candidate;
+        break;
+      } catch {
+        // not in this workspace folder
+      }
+    }
+
+    // Fall back to a glob search by filename.
+    if (!uri) {
+      const matches = await vscode.workspace.findFiles(
+        `**/${relPath}`,
+        "**/node_modules/**",
+        1,
+      );
+      uri = matches[0];
+    }
+
+    if (!uri) {
+      void vscode.window.showWarningMessage(`Repo AI: could not open ${relPath}`);
+      return;
+    }
+
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const editor = await vscode.window.showTextDocument(doc, { preview: true });
+    const pos = doc.positionAt(Math.min(startChar, doc.getText().length));
+    editor.revealRange(
+      new vscode.Range(pos, pos),
+      vscode.TextEditorRevealType.InCenter,
+    );
+    editor.selection = new vscode.Selection(pos, pos);
   }
 
   private _post(msg: unknown): void {
@@ -102,36 +177,22 @@ export class ChatPanel implements vscode.WebviewViewProvider {
       color: var(--fg);
       font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
       font-size: var(--vscode-font-size, 13px);
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      overflow: hidden;
+      display: flex; flex-direction: column;
+      height: 100vh; overflow: hidden;
     }
     #header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
     }
     #header h1 { font-size: 13px; font-weight: 600; opacity: 0.9; }
     #clear-btn {
-      background: transparent;
-      border: none;
-      color: var(--fg);
-      cursor: pointer;
-      opacity: 0.6;
-      font-size: 16px;
-      line-height: 1;
+      background: transparent; border: none; color: var(--fg);
+      cursor: pointer; opacity: 0.6; font-size: 16px; line-height: 1;
     }
     #clear-btn:hover { opacity: 1; }
     #messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+      flex: 1; overflow-y: auto; padding: 12px;
+      display: flex; flex-direction: column; gap: 12px;
     }
     .msg { border-radius: 6px; padding: 10px 12px; }
     .msg.user { background: var(--btn-bg); color: var(--btn-fg); align-self: flex-end; max-width: 85%; }
@@ -142,46 +203,29 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     .sources a { color: var(--accent); text-decoration: none; cursor: pointer; }
     .sources a:hover { text-decoration: underline; }
     pre { white-space: pre-wrap; word-break: break-word; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
+    .cursor { display: inline-block; width: 6px; height: 1em; background: var(--accent); margin-left: 2px; vertical-align: text-bottom; animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
     #input-area {
-      padding: 10px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      gap: 8px;
+      padding: 10px; border-top: 1px solid var(--border);
+      display: flex; gap: 8px;
     }
     #question {
-      flex: 1;
-      background: var(--input-bg);
-      color: var(--input-fg);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 6px 10px;
-      font-size: 13px;
-      resize: none;
-      font-family: inherit;
-      min-height: 36px;
-      max-height: 120px;
+      flex: 1; background: var(--input-bg); color: var(--input-fg);
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 6px 10px; font-size: 13px; resize: none;
+      font-family: inherit; min-height: 36px; max-height: 120px;
     }
     #question:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
     #send-btn {
-      background: var(--btn-bg);
-      color: var(--btn-fg);
-      border: none;
-      border-radius: 4px;
-      padding: 6px 14px;
-      cursor: pointer;
-      font-size: 13px;
-      white-space: nowrap;
+      background: var(--btn-bg); color: var(--btn-fg);
+      border: none; border-radius: 4px; padding: 6px 14px;
+      cursor: pointer; font-size: 13px; white-space: nowrap;
     }
     #send-btn:hover { opacity: 0.85; }
     #send-btn:disabled { opacity: 0.5; cursor: default; }
     .empty-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      opacity: 0.5;
-      gap: 8px;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 100%; opacity: 0.5; gap: 8px;
     }
     .empty-state .icon { font-size: 32px; }
   </style>
@@ -195,7 +239,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     <div class="empty-state">
       <div class="icon">💬</div>
       <div>Ask anything about your codebase</div>
-      <div style="font-size:11px">Ctrl+Shift+A to ask from anywhere</div>
+      <div style="font-size:11px">Ctrl+Shift+A from anywhere</div>
     </div>
   </div>
   <div id="input-area">
@@ -210,45 +254,105 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     const sendBtn = document.getElementById('send-btn');
     const clearBtn = document.getElementById('clear-btn');
     let hasMessages = false;
+    let activeAssistant = null; // { pre, sourcesDiv, cursor }
 
-    function renderAnswer({ question, answer, sources }) {
+    function clearEmptyState() {
       if (!hasMessages) {
         messages.innerHTML = '';
         hasMessages = true;
       }
-      // Remove thinking bubble if present
-      const thinking = messages.querySelector('.thinking');
-      if (thinking) thinking.remove();
+    }
 
-      // User message
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function renderUserMessage(question) {
       const userDiv = document.createElement('div');
       userDiv.className = 'msg user';
       userDiv.textContent = question;
       messages.appendChild(userDiv);
+    }
 
-      // Assistant message
+    function startStreaming(question) {
+      clearEmptyState();
+      renderUserMessage(question);
+
+      const aiDiv = document.createElement('div');
+      aiDiv.className = 'msg assistant';
+      const pre = document.createElement('pre');
+      const cursor = document.createElement('span');
+      cursor.className = 'cursor';
+      pre.appendChild(cursor);
+      aiDiv.appendChild(pre);
+      messages.appendChild(aiDiv);
+      messages.scrollTop = messages.scrollHeight;
+
+      activeAssistant = { aiDiv, pre, cursor, sourcesDiv: null };
+    }
+
+    function appendToken(text) {
+      if (!activeAssistant) return;
+      const node = document.createTextNode(text);
+      activeAssistant.pre.insertBefore(node, activeAssistant.cursor);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function attachSources(sources) {
+      if (!activeAssistant) return;
+      if (!sources || !sources.length) return;
+      const sourcesDiv = document.createElement('div');
+      sourcesDiv.className = 'sources';
+      sourcesDiv.innerHTML = '📎 ' + sources.slice(0, 5).map((s, i) => {
+        const label = (s.split('/').pop() || s).replace(/:.*$/, '');
+        return '<a data-source-i="' + i + '">' + escapeHtml(label) + '</a>';
+      }).join(' · ');
+      sourcesDiv.querySelectorAll('a[data-source-i]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const idx = parseInt(el.getAttribute('data-source-i'), 10);
+          vscode.postMessage({ type: 'openSource', source: sources[idx] });
+        });
+      });
+      activeAssistant.aiDiv.appendChild(sourcesDiv);
+      activeAssistant.sourcesDiv = sourcesDiv;
+    }
+
+    function endStream() {
+      if (activeAssistant && activeAssistant.cursor) {
+        activeAssistant.cursor.remove();
+      }
+      activeAssistant = null;
+      sendBtn.disabled = false;
+    }
+
+    function renderError(msg) {
+      if (activeAssistant && activeAssistant.cursor) {
+        activeAssistant.cursor.remove();
+      }
+      const e = document.createElement('div');
+      e.className = 'msg error';
+      e.textContent = '⚠ ' + msg;
+      messages.appendChild(e);
+      messages.scrollTop = messages.scrollHeight;
+      activeAssistant = null;
+      sendBtn.disabled = false;
+    }
+
+    /** Static answer (e.g. arrived from showAnswer). */
+    function renderAnswer({ question, answer, sources }) {
+      clearEmptyState();
+      renderUserMessage(question);
       const aiDiv = document.createElement('div');
       aiDiv.className = 'msg assistant';
       const pre = document.createElement('pre');
       pre.textContent = answer;
       aiDiv.appendChild(pre);
-
-      if (sources && sources.length) {
-        const sourcesDiv = document.createElement('div');
-        sourcesDiv.className = 'sources';
-        sourcesDiv.innerHTML = '📎 ' + sources.slice(0, 5).map(s => {
-          const label = s.split('/').pop() || s;
-          return \`<a onclick="openSource('\${s.replace(/'/g, "\\\\'")}')">\${label}</a>\`;
-        }).join(' · ');
-        aiDiv.appendChild(sourcesDiv);
-      }
-
       messages.appendChild(aiDiv);
+      activeAssistant = { aiDiv, pre, cursor: null, sourcesDiv: null };
+      attachSources(sources);
+      activeAssistant = null;
       messages.scrollTop = messages.scrollHeight;
-    }
-
-    function openSource(source) {
-      vscode.postMessage({ type: 'openSource', source });
     }
 
     function ask() {
@@ -256,19 +360,6 @@ export class ChatPanel implements vscode.WebviewViewProvider {
       if (!q) return;
       questionEl.value = '';
       sendBtn.disabled = true;
-
-      if (!hasMessages) {
-        messages.innerHTML = '';
-        hasMessages = true;
-      }
-
-      // Show thinking
-      const t = document.createElement('div');
-      t.className = 'msg assistant thinking';
-      t.textContent = '⏳ Thinking...';
-      messages.appendChild(t);
-      messages.scrollTop = messages.scrollHeight;
-
       vscode.postMessage({ type: 'ask', question: q });
     }
 
@@ -282,27 +373,24 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     clearBtn.addEventListener('click', () => {
       messages.innerHTML = '<div class="empty-state"><div class="icon">💬</div><div>Ask anything about your codebase</div></div>';
       hasMessages = false;
+      activeAssistant = null;
       vscode.postMessage({ type: 'clear' });
     });
 
     window.addEventListener('message', (event) => {
       const msg = event.data;
-      if (msg.type === 'answer') {
-        renderAnswer(msg);
-        sendBtn.disabled = false;
-      } else if (msg.type === 'thinking') {
-        // already handled inline
-      } else if (msg.type === 'error') {
-        document.querySelector('.thinking')?.remove();
-        const e = document.createElement('div');
-        e.className = 'msg error';
-        e.textContent = '⚠ ' + msg.message;
-        messages.appendChild(e);
-        messages.scrollTop = messages.scrollHeight;
-        sendBtn.disabled = false;
-      } else if (msg.type === 'clear') {
-        messages.innerHTML = '<div class="empty-state"><div class="icon">💬</div><div>Ask anything about your codebase</div></div>';
-        hasMessages = false;
+      switch (msg.type) {
+        case 'stream-start': startStreaming(msg.question); break;
+        case 'stream-token': appendToken(msg.text); break;
+        case 'stream-sources': attachSources(msg.sources); break;
+        case 'stream-end': endStream(); break;
+        case 'answer': renderAnswer(msg); sendBtn.disabled = false; break;
+        case 'error': renderError(msg.message); break;
+        case 'clear':
+          messages.innerHTML = '<div class="empty-state"><div class="icon">💬</div><div>Ask anything about your codebase</div></div>';
+          hasMessages = false;
+          activeAssistant = null;
+          break;
       }
     });
   </script>
