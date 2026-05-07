@@ -8,6 +8,8 @@ import { useStore } from "../../store/useStore";
 export default function Header() {
   const backendStatus = useStore((s) => s.backendStatus);
   const indexStatus = useStore((s) => s.indexStatus);
+  const activeView = useStore((s) => s.activeView);
+  const setActiveView = useStore((s) => s.setActiveView);
   const [time, setTime] = useState("");
 
   useEffect(() => {
@@ -103,6 +105,31 @@ export default function Header() {
           NEURAL CODE NEXUS
         </span>
       </motion.div>
+
+      {/* View Toggle */}
+      <div style={{ display: "flex", gap: 4 }}>
+        {(["chat", "repomap"] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setActiveView(v)}
+            style={{
+              padding: "4px 14px",
+              borderRadius: 6,
+              border: "1px solid",
+              borderColor: activeView === v ? "var(--cyber-cyan)" : "rgba(255,255,255,0.1)",
+              background: activeView === v ? "rgba(0,212,255,0.1)" : "transparent",
+              color: activeView === v ? "var(--cyber-cyan)" : "var(--text-dim)",
+              cursor: "pointer",
+              fontSize: 10,
+              fontFamily: '"JetBrains Mono", monospace',
+              letterSpacing: "1px",
+              textTransform: "uppercase",
+            }}
+          >
+            {v === "chat" ? "QUERY" : "REPO MAP"}
+          </button>
+        ))}
+      </div>
 
       {/* System Status HUD */}
       <motion.div

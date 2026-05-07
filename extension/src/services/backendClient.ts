@@ -66,6 +66,118 @@ export interface ClusterResponse {
   clusters: Cluster[];
 }
 
+// ── Repo Map types ──────────────────────────────────────────
+
+export interface RepoMapCommunity {
+  id: string;
+  label: string;
+  heuristic_label: string;
+  symbol_count: number;
+  cohesion: number;
+}
+
+export interface RepoMapProcess {
+  id: string;
+  label: string;
+  process_type: string;
+  step_count: number;
+}
+
+export interface RepoMapStats {
+  total_nodes: number;
+  total_relationships: number;
+  total_communities: number;
+  total_processes: number;
+}
+
+export interface RepoMapSummary {
+  communities: RepoMapCommunity[];
+  processes: RepoMapProcess[];
+  stats: RepoMapStats;
+}
+
+export interface CommunityMember {
+  id: string;
+  name: string;
+  label: string;
+  file_path: string;
+}
+
+export interface CommunityRelationship {
+  source: string;
+  target: string;
+  type: string;
+  confidence: number;
+}
+
+export interface CommunityDetail {
+  id: string;
+  label: string;
+  heuristic_label: string;
+  symbol_count: number;
+  cohesion: number;
+  members: CommunityMember[];
+  internal_relationships: CommunityRelationship[];
+}
+
+export interface ProcessStep {
+  step: number;
+  node_id: string;
+  name: string;
+  label: string;
+  file_path: string;
+}
+
+export interface ProcessDetail {
+  id: string;
+  label: string;
+  process_type: string;
+  step_count: number;
+  communities: string[];
+  steps: ProcessStep[];
+}
+
+export interface SymbolRelationship {
+  id: string;
+  name: string;
+  label: string;
+  file_path: string;
+  rel_type: string;
+  confidence: number;
+}
+
+export interface SymbolDetail {
+  id: string;
+  name: string;
+  label: string;
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  is_exported: boolean;
+  community_id: string | null;
+  callers: SymbolRelationship[];
+  callees: SymbolRelationship[];
+}
+
+export interface NeighborhoodNode {
+  id: string;
+  label: string;
+  name: string;
+  file_path: string;
+}
+
+export interface NeighborhoodEdge {
+  source: string;
+  target: string;
+  type: string;
+  confidence: number;
+}
+
+export interface NeighborhoodGraph {
+  nodes: NeighborhoodNode[];
+  edges: NeighborhoodEdge[];
+}
+
 export class BackendClient {
   constructor(private baseUrl: string) {}
 
@@ -188,5 +300,27 @@ export class BackendClient {
 
   async semanticClusters(): Promise<ClusterResponse> {
     return this._fetch<ClusterResponse>("/graph/clusters");
+  }
+
+  async repoMapSummary(): Promise<RepoMapSummary> {
+    return this._fetch<RepoMapSummary>("/graph/repo-map", "GET", undefined, 15_000);
+  }
+
+  async communityDetail(id: string): Promise<CommunityDetail> {
+    return this._fetch<CommunityDetail>(`/graph/community/${encodeURIComponent(id)}`);
+  }
+
+  async processDetail(id: string): Promise<ProcessDetail> {
+    return this._fetch<ProcessDetail>(`/graph/process/${encodeURIComponent(id)}`);
+  }
+
+  async symbolDetail(id: string): Promise<SymbolDetail> {
+    return this._fetch<SymbolDetail>(`/graph/symbol/${encodeURIComponent(id)}`);
+  }
+
+  async neighborhood(id: string, hops = 2): Promise<NeighborhoodGraph> {
+    return this._fetch<NeighborhoodGraph>(
+      `/graph/neighborhood/${encodeURIComponent(id)}?hops=${hops}`,
+    );
   }
 }

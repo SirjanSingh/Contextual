@@ -11,6 +11,7 @@ export default defineConfig({
       "/upload": "http://localhost:8360",
       "/health": "http://localhost:8360",
       "/repository": "http://localhost:8360",
+      "/graph": "http://localhost:8360",
       "/ws": {
         target: "ws://localhost:8360",
         ws: true,

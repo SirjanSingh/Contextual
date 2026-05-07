@@ -12,6 +12,7 @@ import DropZone from "./components/upload/DropZone";
 import UploadProgress from "./components/upload/UploadProgress";
 import ActivityFeed from "./components/sidebar/ActivityFeed";
 import BootSequence from "./components/ui/BootSequence";
+import RepoMapView from "./components/repomap/RepoMapView";
 import { useStore } from "./store/useStore";
 import { getHealth, getIndexStatus } from "./api/client";
 
@@ -23,6 +24,7 @@ export default function App() {
   const setIndexStatus = useStore((s) => s.setIndexStatus);
   const addActivity = useStore((s) => s.addActivity);
   const showActivityFeed = useStore((s) => s.showActivityFeed);
+  const activeView = useStore((s) => s.activeView);
 
   // Health check on mount
   useEffect(() => {
@@ -107,7 +109,7 @@ export default function App() {
             gap: 12,
           }}
         >
-          {/* Chat panel (center) */}
+          {/* Main panel */}
           <div
             style={{
               flex: 1,
@@ -118,18 +120,34 @@ export default function App() {
               padding: "12px 0",
             }}
           >
-            <div
-              className="glass-card"
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-              }}
-            >
-              <ChatView />
-            </div>
-            <QueryInput />
+            {activeView === "chat" ? (
+              <>
+                <div
+                  className="glass-card"
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                  }}
+                >
+                  <ChatView />
+                </div>
+                <QueryInput />
+              </>
+            ) : (
+              <div
+                className="glass-card"
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                }}
+              >
+                <RepoMapView />
+              </div>
+            )}
           </div>
 
           {/* Activity feed (right panel) */}

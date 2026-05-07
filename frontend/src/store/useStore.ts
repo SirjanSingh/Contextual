@@ -65,6 +65,16 @@ interface AppState {
   // Activity log
   activityLog: string[];
   addActivity: (msg: string) => void;
+
+  // View toggle
+  activeView: "chat" | "repomap";
+  setActiveView: (v: "chat" | "repomap") => void;
+
+  // Repo map selection
+  selectedCommunity: string | null;
+  selectedSymbol: string | null;
+  setSelectedCommunity: (id: string | null) => void;
+  setSelectedSymbol: (id: string | null) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -117,4 +127,14 @@ export const useStore = create<AppState>((set) => ({
         ...s.activityLog,
       ].slice(0, 100),
     })),
+
+  // View toggle
+  activeView: "chat",
+  setActiveView: (activeView) => set({ activeView }),
+
+  // Repo map selection
+  selectedCommunity: null,
+  selectedSymbol: null,
+  setSelectedCommunity: (selectedCommunity) => set({ selectedCommunity }),
+  setSelectedSymbol: (selectedSymbol) => set({ selectedSymbol }),
 }));

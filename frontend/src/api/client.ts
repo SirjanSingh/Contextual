@@ -84,3 +84,102 @@ export function connectProgressWS(
 export async function clearRepository(): Promise<void> {
   await fetch(`${BASE}/repository/clear`, { method: "DELETE" });
 }
+
+// ── Repo Map API ──────────────────────────────────────────────
+
+export interface RepoMapSummary {
+  stats: Record<string, unknown>;
+  communities: Array<{
+    id: string;
+    label: string;
+    heuristic_label: string;
+    cohesion: number;
+    symbol_count: number;
+  }>;
+  processes: Array<{
+    id: string;
+    label: string;
+    process_type: string;
+    step_count: number;
+    communities: string[];
+  }>;
+  community_stats: Record<string, unknown>;
+  process_stats: Record<string, unknown>;
+}
+
+export interface SymbolNode {
+  id: string;
+  label: string;
+  name: string;
+  file_path: string;
+  start_line: number;
+  language: string;
+  is_exported: boolean;
+  community?: string;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  type: string;
+  confidence?: number;
+}
+
+export async function getRepoMap(): Promise<RepoMapSummary> {
+  const res = await fetch(`${BASE}/graph/repo-map`);
+  if (!res.ok) throw new Error(`Repo map not available: ${res.status}`);
+  return res.json();
+}
+
+export async function getSymbolDetail(symbolId: string): Promise<{
+  id: string;
+  label: string;
+  name: string;
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  community?: string;
+  callers: Array<{ id: string; name: string; label: string; file_path: string }>;
+  callees: Array<{ id: string; name: string; label: string; file_path: string }>;
+}> {
+  const res = await fetch(`${BASE}/graph/symbol/${encodeURIComponent(symbolId)}`);
+  if (!res.ok) throw new Error("Symbol not found");
+  return res.json();
+}
+
+export async function getCommunityDetail(communityId: string): Promise<{
+  id: string;
+  label: string;
+  cohesion: number;
+  symbol_count: number;
+  members: SymbolNode[];
+  internal_relationships: GraphEdge[];
+}> {
+  const res = await fetch(`${BASE}/graph/community/${communityId}`);
+  if (!res.ok) throw new Error("Community not found");
+  return res.json();
+}
+
+export async function getProcessDetail(processId: string): Promise<{
+  id: string;
+  label: string;
+  process_type: string;
+  step_count: number;
+  communities: string[];
+  steps: Array<{ step: number; node_id: string; name: string; file_path: string; label: string }>;
+}> {
+  const res = await fetch(`${BASE}/graph/process/${processId}`);
+  if (!res.ok) throw new Error("Process not found");
+  return res.json();
+}
+
+export async function getNeighborhood(symbolId: string, hops = 2): Promise<{
+  nodes: Array<SymbolNode & { is_focal: boolean }>;
+  edges: GraphEdge[];
+}> {
+  const res = await fetch(
+    `${BASE}/graph/neighborhood/${encodeURIComponent(symbolId)}?hops=${hops}`,
+  );
+  if (!res.ok) throw new Error("Neighborhood fetch failed");
+  return res.json();
+}

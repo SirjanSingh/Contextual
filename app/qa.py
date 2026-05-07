@@ -39,6 +39,7 @@ class QAEngine:
     use_compression: bool = True  # Enable contextual compression by default
     use_ast_chunking: bool = False  # Disable AST chunking by default (changes index)
     use_multi_query: bool = True  # Enable multi-query retrieval by default
+    use_graph_context: bool = True  # Enable graph-aware retrieval expansion
 
     index = None
     metadata: List[Dict] | None = None
@@ -49,6 +50,8 @@ class QAEngine:
     _query_expander: QueryExpander | None = None
     _compressor: ContextCompressor | None = None
     _multi_query: MultiQueryGenerator | None = None
+    _repo_map: object | None = None   # RepoMapData from repo_map package
+    _repo_graph: object | None = None  # KnowledgeGraph from repo_map package
 
     def build(self, force_rebuild: bool = False) -> None:
         repo_files = load_repo_files(self.repo_root)
@@ -67,6 +70,7 @@ class QAEngine:
             )
             if loaded is not None:
                 self.index, self.metadata, self.cache_dir, self._bm25_index = loaded
+                self._build_repo_map(repo_files, force_rebuild=False)
                 return
 
         # Cache miss (or forced rebuild): compute embeddings and build index.
@@ -82,6 +86,21 @@ class QAEngine:
             build_bm25=self.use_hybrid_search,
         )
         self.index, self.metadata, self.cache_dir, self._bm25_index = index, metadata, cache_dir, bm25_index
+        self._build_repo_map(repo_files, force_rebuild=force_rebuild)
+
+    def _build_repo_map(self, repo_files, force_rebuild: bool = False) -> None:
+        """Build repo map in background (non-fatal if it fails)."""
+        if self.cache_dir is None:
+            return
+        try:
+            from .repo_map import build_repo_map
+            self._repo_map, self._repo_graph = build_repo_map(
+                repo_files=repo_files,
+                cache_dir=self.cache_dir,
+                force_rebuild=force_rebuild,
+            )
+        except Exception as e:
+            logger.warning(f"[QA] repo map build failed (non-fatal): {e}")
 
 
     def ask(self, question: str) -> Tuple[str, List[str]]:
@@ -145,6 +164,17 @@ class QAEngine:
                     question=q,
                     top_k=retrieve_k if self.use_reranker else self.top_k,
                     retrieve_k=retrieve_k * 2,
+                )
+            elif self.use_graph_context and self._repo_graph is not None:
+                from .retriever import retrieve_with_graph_context
+                q_chunks = retrieve_with_graph_context(
+                    index=self.index,
+                    metadata=self.metadata,
+                    embedder=self.embedder,
+                    question=q,
+                    top_k=retrieve_k,
+                    repo_graph=self._repo_graph,
+                    repo_map=self._repo_map,
                 )
             else:
                 q_chunks = retrieve(

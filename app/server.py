@@ -486,71 +486,102 @@ async def clear_repository():
 
 @app.get("/graph/dependencies")
 async def dependency_graph():
-    """Return file-to-file dependency edges from import analysis."""
+    """Return file-to-file IMPORTS edges (from repo map if available, regex fallback)."""
     engine = _get_engine()
     if engine is None or engine.metadata is None:
         raise HTTPException(status_code=400, detail="No repository indexed yet.")
 
+    # Use repo map data if available (higher quality)
+    if engine._repo_graph is not None:
+        graph = engine._repo_graph
+        nodes = []
+        edges = []
+        seen_edges = set()
+        for node in graph.iter_nodes():
+            if node.label == "File":
+                nodes.append({
+                    "id": node.properties.file_path,
+                    "label": node.properties.name,
+                    "type": "file",
+                })
+        for rel in graph.relationships_by_type("IMPORTS"):
+            src = rel.source_id.replace("File:", "")
+            tgt = rel.target_id.replace("File:", "")
+            key = (src, tgt)
+            if key not in seen_edges:
+                seen_edges.add(key)
+                edges.append({"source": src, "target": tgt, "type": "import"})
+        return {"nodes": nodes, "edges": edges}
+
+    # Fallback: regex-based (original behaviour)
     import re
     from collections import defaultdict
-
-    # Build file nodes
     file_chunks: dict = defaultdict(list)
     for m in engine.metadata:
         file_chunks[m.get("source", "unknown")].append(m)
-
     nodes = [
         {"id": src, "label": Path(src).name, "type": "file", "chunkCount": len(chunks)}
         for src, chunks in file_chunks.items()
     ]
-
-    # Parse import edges from chunk text
     edges = []
     seen_edges = set()
-    import_pattern = re.compile(
-        r"^(?:import|from)\s+([\w\.]+)", re.MULTILINE
-    )
+    import_pattern = re.compile(r"^(?:import|from)\s+([\w\.]+)", re.MULTILINE)
     for src, chunks in file_chunks.items():
         for chunk in chunks:
             text = chunk.get("text", "")
             for match in import_pattern.finditer(text):
                 module = match.group(1).split(".")[0]
-                # Match to actual files in index
                 for target in file_chunks:
                     if Path(target).stem == module or Path(target).name == module:
                         edge_key = (src, target)
                         if edge_key not in seen_edges and src != target:
                             seen_edges.add(edge_key)
                             edges.append({"source": src, "target": target, "type": "import"})
-
     return {"nodes": nodes, "edges": edges}
 
 
 @app.get("/graph/clusters")
 async def semantic_clusters():
-    """Return k-means clusters of FAISS vectors."""
+    """Return clusters (from repo map communities if available, k-means fallback)."""
     engine = _get_engine()
     if engine is None or engine.index is None or engine.metadata is None:
         raise HTTPException(status_code=400, detail="No repository indexed yet.")
 
+    # Use repo map communities if available
+    if engine._repo_map is not None:
+        communities = engine._repo_map.communities.communities
+        membership_map = {m.node_id: m.community_id for m in engine._repo_map.communities.memberships}
+        graph = engine._repo_graph
+        clusters = []
+        for comm in communities:
+            files = list({
+                graph.get_node(nid).properties.file_path
+                for nid, cid in membership_map.items()
+                if cid == comm.id and graph.get_node(nid) and graph.get_node(nid).properties.file_path
+            })
+            clusters.append({
+                "id": comm.id,
+                "centroid_label": comm.heuristic_label,
+                "files": files,
+                "size": comm.symbol_count,
+                "cohesion": round(comm.cohesion, 3),
+            })
+        return {"clusters": clusters}
+
+    # Fallback: k-means
     try:
         import numpy as np
         try:
             from sklearn.cluster import KMeans
         except ImportError:
             return {"clusters": [], "error": "sklearn not installed"}
-
         n_vectors = engine.index.ntotal
         k = min(8, max(2, n_vectors // 10))
-
-        # Reconstruct vectors from FAISS index
         vectors = np.zeros((n_vectors, engine.index.d), dtype=np.float32)
         for i in range(n_vectors):
             engine.index.reconstruct(i, vectors[i])
-
         kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
         labels = kmeans.fit_predict(vectors)
-
         clusters = []
         for cluster_id in range(k):
             cluster_indices = [i for i, lbl in enumerate(labels) if lbl == cluster_id]
@@ -565,10 +596,213 @@ async def semantic_clusters():
                 "files": files_in_cluster,
                 "size": len(cluster_indices),
             })
-
         return {"clusters": clusters}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Repo Map endpoints
+# ──────────────────────────────────────────────
+
+def _require_repo_map():
+    """Return (engine, repo_map, repo_graph) or raise 400/503."""
+    engine = _get_engine()
+    if engine is None or engine.metadata is None:
+        raise HTTPException(status_code=400, detail="No repository indexed yet.")
+    if engine._repo_map is None or engine._repo_graph is None:
+        raise HTTPException(status_code=503, detail="Repo map not yet built. Retry shortly.")
+    return engine, engine._repo_map, engine._repo_graph
+
+
+@app.get("/graph/repo-map")
+async def repo_map_summary():
+    """Return repo map overview: communities, processes, symbol/relationship counts."""
+    _, data, graph = _require_repo_map()
+    return {
+        "stats": data.stats,
+        "communities": [c.__dict__ for c in data.communities.communities],
+        "processes": [
+            {
+                "id": p.id,
+                "label": p.label,
+                "process_type": p.process_type,
+                "step_count": p.step_count,
+                "communities": p.communities,
+            }
+            for p in data.processes.processes
+        ],
+        "community_stats": data.communities.stats,
+        "process_stats": data.processes.stats,
+    }
+
+
+@app.get("/graph/symbols")
+async def list_symbols(
+    file: str = None,
+    label: str = None,
+    community: str = None,
+    offset: int = 0,
+    limit: int = 100,
+):
+    """List symbol nodes with optional filters."""
+    _, data, graph = _require_repo_map()
+    membership_map = {m.node_id: m.community_id for m in data.communities.memberships}
+    results = []
+    for node in graph.iter_nodes():
+        if node.label not in ("Function", "Class", "Method", "Interface"):
+            continue
+        if file and node.properties.file_path != file:
+            continue
+        if label and node.label != label:
+            continue
+        if community and membership_map.get(node.id) != community:
+            continue
+        results.append({
+            "id": node.id,
+            "label": node.label,
+            "name": node.properties.name,
+            "file_path": node.properties.file_path,
+            "start_line": node.properties.start_line,
+            "language": node.properties.language,
+            "is_exported": node.properties.is_exported,
+            "community": membership_map.get(node.id),
+        })
+    total = len(results)
+    return {"total": total, "symbols": results[offset: offset + limit]}
+
+
+@app.get("/graph/symbol/{symbol_id:path}")
+async def get_symbol(symbol_id: str):
+    """Return a symbol with its direct relationships (callers, callees, community)."""
+    _, data, graph = _require_repo_map()
+    node = graph.get_node(symbol_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Symbol not found.")
+
+    membership_map = {m.node_id: m.community_id for m in data.communities.memberships}
+
+    def _node_summary(nid):
+        n = graph.get_node(nid)
+        if not n:
+            return {"id": nid}
+        return {"id": nid, "name": n.properties.name, "label": n.label,
+                "file_path": n.properties.file_path}
+
+    callers = [_node_summary(r.source_id) for r in graph.incoming(symbol_id, "CALLS")]
+    callees = [_node_summary(r.target_id) for r in graph.outgoing(symbol_id, "CALLS")]
+
+    return {
+        "id": node.id,
+        "label": node.label,
+        "name": node.properties.name,
+        "file_path": node.properties.file_path,
+        "start_line": node.properties.start_line,
+        "end_line": node.properties.end_line,
+        "language": node.properties.language,
+        "is_exported": node.properties.is_exported,
+        "community": membership_map.get(symbol_id),
+        "callers": callers,
+        "callees": callees,
+    }
+
+
+@app.get("/graph/community/{community_id}")
+async def get_community(community_id: str):
+    """Return community detail: members, cohesion, internal relationships."""
+    _, data, graph = _require_repo_map()
+    comm = next((c for c in data.communities.communities if c.id == community_id), None)
+    if not comm:
+        raise HTTPException(status_code=404, detail="Community not found.")
+
+    member_ids = [m.node_id for m in data.communities.memberships if m.community_id == community_id]
+    member_set = set(member_ids)
+
+    members = []
+    for nid in member_ids:
+        n = graph.get_node(nid)
+        if n:
+            members.append({"id": nid, "name": n.properties.name, "label": n.label,
+                            "file_path": n.properties.file_path})
+
+    internal_rels = [
+        {"source": r.source_id, "target": r.target_id, "type": r.type}
+        for r in graph.iter_relationships()
+        if r.type in ("CALLS", "EXTENDS") and r.source_id in member_set and r.target_id in member_set
+    ]
+
+    return {
+        "id": comm.id,
+        "label": comm.heuristic_label,
+        "cohesion": comm.cohesion,
+        "symbol_count": comm.symbol_count,
+        "members": members,
+        "internal_relationships": internal_rels[:200],
+    }
+
+
+@app.get("/graph/process/{process_id}")
+async def get_process(process_id: str):
+    """Return process detail with ordered trace steps."""
+    _, data, graph = _require_repo_map()
+    proc = next((p for p in data.processes.processes if p.id == process_id), None)
+    if not proc:
+        raise HTTPException(status_code=404, detail="Process not found.")
+
+    steps = []
+    for step_num, nid in enumerate(proc.trace, start=1):
+        n = graph.get_node(nid)
+        steps.append({
+            "step": step_num,
+            "node_id": nid,
+            "name": n.properties.name if n else nid,
+            "file_path": n.properties.file_path if n else "",
+            "label": n.label if n else "",
+        })
+
+    return {
+        "id": proc.id,
+        "label": proc.label,
+        "process_type": proc.process_type,
+        "step_count": proc.step_count,
+        "communities": proc.communities,
+        "steps": steps,
+    }
+
+
+@app.get("/graph/neighborhood/{symbol_id:path}")
+async def get_neighborhood(symbol_id: str, hops: int = 2):
+    """Return subgraph within N hops of a symbol (for force-directed viz)."""
+    _, data, graph = _require_repo_map()
+    if not graph.has_node(symbol_id):
+        raise HTTPException(status_code=404, detail="Symbol not found.")
+
+    sub = graph.neighborhood(symbol_id, hops=min(hops, 3))
+    membership_map = {m.node_id: m.community_id for m in data.communities.memberships}
+
+    nodes = []
+    for n in sub.iter_nodes():
+        if n.label in ("Function", "Class", "Method", "Interface", "File"):
+            nodes.append({
+                "id": n.id,
+                "label": n.label,
+                "name": n.properties.name,
+                "file_path": n.properties.file_path,
+                "community": membership_map.get(n.id),
+                "is_focal": n.id == symbol_id,
+            })
+
+    edges = []
+    for r in sub.iter_relationships():
+        if r.type in ("CALLS", "IMPORTS", "EXTENDS"):
+            edges.append({
+                "source": r.source_id,
+                "target": r.target_id,
+                "type": r.type,
+                "confidence": r.confidence,
+            })
+
+    return {"nodes": nodes, "edges": edges}
 
 
 # ──────────────────────────────────────────────
