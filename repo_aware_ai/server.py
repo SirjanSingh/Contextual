@@ -87,6 +87,7 @@ def _get_engine() -> Optional[QAEngine]:
 class QueryRequest(BaseModel):
     question: str
     repo_path: Optional[str] = None
+    top_k: Optional[int] = None  # honored by /search; ignored by /query and /query/stream
 
 
 class QueryResponse(BaseModel):
@@ -177,31 +178,53 @@ async def query(req: QueryRequest):
 
 @app.post("/query/stream")
 async def query_stream(req: QueryRequest):
-    """SSE stream: yields partial answer tokens."""
+    """SSE stream: emits incremental answer chunks, then sources, then a `done` event.
+
+    Uses Gemini's native streaming when the SDK supports it; falls back to
+    yielding the full answer in one chunk otherwise.
+    """
     engine = _get_engine()
     if engine is None or engine.index is None:
         raise HTTPException(status_code=400, detail="No repository indexed yet.")
 
+    import json as _json
+
+    def _sse(event: str | None, data: str) -> str:
+        prefix = f"event: {event}\n" if event else ""
+        # SSE requires each line of the data to be its own `data:` line.
+        body = "\n".join(f"data: {line}" for line in data.split("\n"))
+        return f"{prefix}{body}\n\n"
+
     async def generate() -> AsyncGenerator[str, None]:
+        loop = asyncio.get_event_loop()
         try:
-            # Run retrieval in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            answer, sources = await loop.run_in_executor(None, engine.ask, req.question)
+            iterator, sources = await loop.run_in_executor(None, engine.stream_ask, req.question)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("stream prep failed: %s", e)
+            yield _sse("error", str(e))
+            return
 
-            # Stream tokens word-by-word (backend doesn't yet support true streaming;
-            # this simulates it — upgrade later when google-genai streaming is wired up)
-            words = answer.split(" ")
-            for i, word in enumerate(words):
-                chunk = word if i == len(words) - 1 else word + " "
-                yield f"data: {chunk}\n\n"
-                await asyncio.sleep(0)  # yield control
+        # Drain the (blocking) iterator on the executor to avoid stalling the loop.
+        sentinel = object()
 
-            # Send sources as final event
-            import json
-            yield f"event: sources\ndata: {json.dumps(sources)}\n\n"
-            yield "event: done\ndata: \n\n"
-        except Exception as e:
-            yield f"event: error\ndata: {str(e)}\n\n"
+        def next_chunk():
+            try:
+                return next(iterator)
+            except StopIteration:
+                return sentinel
+
+        try:
+            while True:
+                piece = await loop.run_in_executor(None, next_chunk)
+                if piece is sentinel:
+                    break
+                if piece:
+                    yield _sse(None, piece)
+            yield _sse("sources", _json.dumps(sources))
+            yield _sse("done", "")
+        except Exception as e:  # noqa: BLE001
+            logger.exception("stream failure: %s", e)
+            yield _sse("error", str(e))
 
     return StreamingResponse(
         generate(),
@@ -209,6 +232,7 @@ async def query_stream(req: QueryRequest):
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
         },
     )
 
@@ -223,7 +247,8 @@ async def semantic_search(req: QueryRequest):
     try:
         from .retriever import retrieve
 
-        top_k = 8  # More results for search (no reranker overhead)
+        # Caller can request a different top_k; clamp to a sane range.
+        top_k = max(1, min(req.top_k or 8, 50))
         if engine.use_hybrid_search and engine._bm25_index is not None:
             from .hybrid_search import hybrid_retrieve
             chunks = hybrid_retrieve(
@@ -323,9 +348,10 @@ async def index_directory(req: IndexDirectoryRequest):
 
     def _index_worker():
         global _engine, _index_status, _index_info
+        _index_status = "building"
+        _index_info = {"repo_path": str(repo_path), "stage": "building"}
         try:
-            _index_status = "building"
-            logger.info(f"[indexer] Building index for {repo_path}...")
+            logger.info("[indexer] Building index for %s...", repo_path)
             t0 = time.time()
             embedder = Embedder()
             llm = LLMClient()
@@ -346,14 +372,15 @@ async def index_directory(req: IndexDirectoryRequest):
             _index_info = {
                 "repo_path": str(repo_path),
                 "chunk_count": chunk_count,
+                "total_chunks": chunk_count,
                 "build_time_s": round(elapsed, 2),
             }
             _index_status = "ready"
-            logger.info(f"[indexer] Index ready: {chunk_count} chunks in {elapsed:.1f}s")
-        except Exception as e:
+            logger.info("[indexer] Index ready: %d chunks in %.1fs", chunk_count, elapsed)
+        except Exception as e:  # noqa: BLE001
+            _index_info = {"repo_path": str(repo_path), "error": str(e), "error_type": type(e).__name__}
             _index_status = "error"
-            _index_info = {"error": str(e)}
-            logger.exception(f"[indexer] Index failed: {e}")
+            logger.exception("[indexer] Index failed: %s", e)
 
     thread = threading.Thread(target=_index_worker, daemon=True)
     thread.start()
@@ -367,17 +394,27 @@ async def index_directory(req: IndexDirectoryRequest):
 
 @app.post("/index/rebuild")
 async def rebuild_index():
-    global _index_status
+    global _index_status, _index_info
     engine = _get_engine()
     if engine is None:
         raise HTTPException(status_code=400, detail="No repository loaded.")
     _index_status = "building"
+    _index_info = {**_index_info, "stage": "rebuilding"}
     try:
-        engine.build(force_rebuild=True)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: engine.build(force_rebuild=True))
+        chunk_count = len(engine.metadata) if engine.metadata else 0
+        _index_info = {
+            "repo_path": str(engine.repo_root),
+            "chunk_count": chunk_count,
+            "total_chunks": chunk_count,
+        }
         _index_status = "ready"
         return {"status": "ok", "message": "Index rebuilt successfully"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
+        _index_info = {"error": str(e), "error_type": type(e).__name__}
         _index_status = "error"
+        logger.exception("rebuild failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -393,8 +430,9 @@ async def upload_directory(files: List[UploadFile] = File(...)):
     # Run indexing in a background thread
     def _index_worker():
         global _engine, _index_status, _index_info
+        _index_status = "building"
+        _index_info = {"repo_path": str(repo_path), "stage": "uploading"}
         try:
-            _index_status = "building"
             embedder = Embedder()
             llm = LLMClient()
 
@@ -407,7 +445,6 @@ async def upload_directory(files: List[UploadFile] = File(...)):
             )
             _index_info = result or {}
 
-            # Build a QAEngine for serving queries
             engine = QAEngine(
                 repo_root=Path(repo_path),
                 cache_base=_DATA_DIR,
@@ -418,12 +455,15 @@ async def upload_directory(files: List[UploadFile] = File(...)):
 
             with _engine_lock:
                 _engine = engine
+            _index_info = {**_index_info, "total_chunks": len(engine.metadata or [])}
             _index_status = "ready"
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             progress.update(stage="error", current_file=str(e))
             progress.errors.append(str(e))
+            _index_info = {"repo_path": str(repo_path), "error": str(e), "error_type": type(e).__name__}
             _index_status = "error"
+            logger.exception("upload-index failed: %s", e)
 
     thread = threading.Thread(target=_index_worker, daemon=True)
     thread.start()

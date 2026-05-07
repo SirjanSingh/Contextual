@@ -1,13 +1,15 @@
 """Conversation history management for multi-turn dialogues."""
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List
 
 
 @dataclass
 class ConversationTurn:
     """A single turn in the conversation."""
+
     question: str
     answer: str
     sources: List[str]
@@ -15,60 +17,51 @@ class ConversationTurn:
 
 @dataclass
 class ConversationHistory:
-    """Manages conversation history for context-aware follow-up questions."""
-    
-    max_turns: int = 5  # Keep last 5 turns
+    """Bounded ring buffer of recent conversation turns.
+
+    Thread-safe so the FastAPI server can serve concurrent /query requests
+    without corrupting history.
+    """
+
+    max_turns: int = 5
     _history: List[ConversationTurn] = field(default_factory=list)
-    
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
     def add_turn(self, question: str, answer: str, sources: List[str]) -> None:
-        """Add a new conversation turn."""
-        turn = ConversationTurn(question=question, answer=answer, sources=sources)
-        self._history.append(turn)
-        
-        # Keep only last max_turns
-        if len(self._history) > self.max_turns:
-            self._history = self._history[-self.max_turns:]
-    
+        turn = ConversationTurn(question=question, answer=answer, sources=list(sources))
+        with self._lock:
+            self._history.append(turn)
+            if len(self._history) > self.max_turns:
+                self._history = self._history[-self.max_turns :]
+
     def get_context(self, include_sources: bool = False) -> str:
-        """Get formatted conversation history for context.
-        
-        Args:
-            include_sources: Whether to include source citations in history.
-        
-        Returns:
-            Formatted conversation history string.
-        """
-        if not self._history:
+        with self._lock:
+            snapshot = list(self._history)
+
+        if not snapshot:
             return ""
-        
-        context_parts = ["CONVERSATION HISTORY:"]
-        
-        for i, turn in enumerate(self._history, 1):
-            context_parts.append(f"\nQ{i}: {turn.question}")
-            context_parts.append(f"A{i}: {turn.answer}")
-            
+
+        parts = ["CONVERSATION HISTORY:"]
+        for i, turn in enumerate(snapshot, 1):
+            parts.append(f"\nQ{i}: {turn.question}")
+            parts.append(f"A{i}: {turn.answer}")
             if include_sources and turn.sources:
-                sources_str = ", ".join(turn.sources[:3])  # Show max 3 sources
-                context_parts.append(f"Sources: {sources_str}")
-        
-        context_parts.append("\n---\n")
-        return "\n".join(context_parts)
-    
+                parts.append(f"Sources: {', '.join(turn.sources[:3])}")
+        parts.append("\n---\n")
+        return "\n".join(parts)
+
     def get_last_question(self) -> str | None:
-        """Get the last question asked."""
-        if not self._history:
-            return None
-        return self._history[-1].question
-    
+        with self._lock:
+            return self._history[-1].question if self._history else None
+
     def clear(self) -> None:
-        """Clear conversation history."""
-        self._history.clear()
-    
+        with self._lock:
+            self._history.clear()
+
     def __len__(self) -> int:
-        """Return number of turns in history."""
-        return len(self._history)
-    
+        with self._lock:
+            return len(self._history)
+
     @property
     def is_empty(self) -> bool:
-        """Check if history is empty."""
-        return len(self._history) == 0
+        return len(self) == 0

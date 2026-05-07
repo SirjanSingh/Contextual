@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import Iterator, List
 
+from ._retry import gemini_retry
 from .config import get_config
 from .retriever import RetrievedChunk
 
@@ -35,7 +36,7 @@ Sources:
 
 
 def _format_context(chunks: List[RetrievedChunk], max_chars: int = 15000) -> str:
-    """Build a compact context block. Keep within a safe budget."""
+    """Build a compact context block within a safe budget."""
     parts: List[str] = []
     used = 0
     for c in chunks:
@@ -49,95 +50,131 @@ def _format_context(chunks: List[RetrievedChunk], max_chars: int = 15000) -> str
     return "".join(parts).strip()
 
 
+def _build_prompt(question: str, chunks: List[RetrievedChunk], conversation_context: str) -> str:
+    context = _format_context(chunks)
+    full_context = (conversation_context + context) if conversation_context else context
+    return SYSTEM_PROMPT + "\n\n" + (
+        f"REPO CONTEXT:\n{full_context}\n\n"
+        f"QUESTION:\n{question}\n\n"
+        'Answer ONLY if the information is explicitly present in the REPO CONTEXT.\n'
+        'If not, say: "Not found in the retrieved repository context."\n'
+        "Follow the Answer/Evidence/Sources format. Do not add extra meta text\n"
+    )
+
+
+def _humanize_error(exc: Exception) -> str:
+    msg = str(exc)
+    upper = msg.upper()
+    if "API_KEY" in upper or "AUTHENTICATION" in upper or "UNAUTHENTICATED" in upper:
+        return (
+            f"API authentication error: {msg}\n\n"
+            "Tip: ensure GOOGLE_API_KEY is set in your .env. "
+            "Get a key at https://aistudio.google.com/app/apikey"
+        )
+    if "429" in msg or "RESOURCE_EXHAUSTED" in upper:
+        return (
+            f"Rate limit exceeded: {msg}\n\n"
+            "Tip: wait a minute and retry. Free tier is ~15 requests/min."
+        )
+    return f"LLM error: {msg}"
+
+
 @dataclass
 class LLMClient:
-    """LLM client using Google Gemini API with new google.genai package."""
-    
+    """Gemini LLM client with retry and streaming support."""
+
     model: str = "models/gemini-2.5-flash"
     temperature: float = 0.2
+    max_output_tokens: int = 2048
     _client: object = field(default=None, repr=False, init=False)
-    
+
     def __post_init__(self) -> None:
-        """Initialize the Gemini client."""
         try:
             from google import genai
             from google.genai import types
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
-                "google-genai is required. Install with:\n"
-                "  pip install google-genai"
-            )
-        
+                "google-genai is required. Install with `pip install google-genai`."
+            ) from e
+
         config = get_config()
         self._client = genai.Client(api_key=config.google_api_key)
         self.model = config.gemini_model
         self._types = types
-    
-    def answer(self, question: str, chunks: List[RetrievedChunk], conversation_context: str = "") -> str:
-        """Generate an answer based on retrieved chunks.
-        
-        Args:
-            question: The user's question.
-            chunks: Retrieved code chunks as context.
-            conversation_context: Optional conversation history for follow-up questions.
-        
-        Returns:
-            The generated answer string.
-        """
-        context = _format_context(chunks)
-        
-        # Include conversation history if provided
-        full_context = conversation_context + context if conversation_context else context
-        
-        user_prompt = f"""REPO CONTEXT:
-{full_context}
 
-QUESTION:
-{question}
+    def _gen_config(self):
+        return self._types.GenerateContentConfig(
+            temperature=self.temperature,
+            max_output_tokens=self.max_output_tokens,
+        )
 
-Answer ONLY if the information is explicitly present in the REPO CONTEXT.
-If not, say: "Not found in the retrieved repository context."
-Follow the Answer/Evidence/Sources format. Do not add extra meta text
-"""
-        
-        try:
-            # Create contents with system instruction and user prompt
-            response = self._client.models.generate_content(
-                model=self.model,
-                contents=[
-                    self._types.Content(
-                        role="user",
-                        parts=[self._types.Part(text=SYSTEM_PROMPT + "\n\n" + user_prompt)]
-                    )
-                ],
-                config=self._types.GenerateContentConfig(
-                    temperature=self.temperature,
-                    max_output_tokens=2048,
-                ),
+    def _content(self, prompt: str):
+        return [
+            self._types.Content(
+                role="user",
+                parts=[self._types.Part(text=prompt)],
             )
-            
-            # Extract text from response
-            if response.text:
-                return response.text.strip()
-            elif hasattr(response, 'candidates') and len(response.candidates) > 0:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                    return "".join(part.text for part in candidate.content.parts if hasattr(part, 'text')).strip()
-            
-            return "No response generated. The model may have blocked the content."
-                
-        except Exception as e:
-            error_msg = str(e)
-            if "API_KEY" in error_msg.upper() or "AUTHENTICATION" in error_msg.upper():
-                return (
-                    f"API Authentication Error: {e}\n\n"
-                    "Tip: Ensure GOOGLE_API_KEY is set correctly in your .env file.\n"
-                    "Get your key from: https://aistudio.google.com/app/apikey"
-                )
-            elif "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg.upper():
-                return (
-                    f"Rate Limit Error: {e}\n\n"
-                    "Tip: You've hit the API rate limit. Wait 60 seconds and try again.\n"
-                    "Free tier: 15 requests per minute."
-                )
-            return f"LLM error: {e}"
+        ]
+
+    @gemini_retry
+    def _generate(self, prompt: str) -> str:
+        response = self._client.models.generate_content(
+            model=self.model,
+            contents=self._content(prompt),
+            config=self._gen_config(),
+        )
+        if getattr(response, "text", None):
+            return response.text.strip()
+        if getattr(response, "candidates", None):
+            cand = response.candidates[0]
+            content = getattr(cand, "content", None)
+            parts = getattr(content, "parts", None) if content else None
+            if parts:
+                return "".join(p.text for p in parts if getattr(p, "text", None)).strip()
+        return "No response generated. The model may have blocked the content."
+
+    def answer(
+        self,
+        question: str,
+        chunks: List[RetrievedChunk],
+        conversation_context: str = "",
+    ) -> str:
+        prompt = _build_prompt(question, chunks, conversation_context)
+        try:
+            return self._generate(prompt)
+        except Exception as e:  # noqa: BLE001 — surface a friendly message
+            return _humanize_error(e)
+
+    def stream_answer(
+        self,
+        question: str,
+        chunks: List[RetrievedChunk],
+        conversation_context: str = "",
+    ) -> Iterator[str]:
+        """Stream answer chunks as they arrive from Gemini.
+
+        Yields incremental text chunks. Falls back to a single yield if the
+        SDK does not support streaming on this version.
+        """
+        prompt = _build_prompt(question, chunks, conversation_context)
+
+        # google-genai >= 0.3 exposes generate_content_stream.
+        stream_fn = getattr(self._client.models, "generate_content_stream", None)
+        if stream_fn is None:
+            try:
+                yield self._generate(prompt)
+            except Exception as e:  # noqa: BLE001
+                yield _humanize_error(e)
+            return
+
+        try:
+            for chunk in stream_fn(
+                model=self.model,
+                contents=self._content(prompt),
+                config=self._gen_config(),
+            ):
+                text = getattr(chunk, "text", None)
+                if text:
+                    yield text
+        except Exception as e:  # noqa: BLE001
+            yield _humanize_error(e)

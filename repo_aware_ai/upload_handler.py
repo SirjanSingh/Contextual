@@ -92,7 +92,11 @@ def process_repository_sync(
             current_file=f"Embedded {min(i + batch_size, len(texts))}/{len(texts)} chunks",
         )
 
-    embeddings = np.vstack(all_embeddings) if all_embeddings else np.array([], dtype=np.float32).reshape(0, 768)
+    embeddings = (
+        np.vstack(all_embeddings)
+        if all_embeddings
+        else np.empty((0, embedder.dimension), dtype=np.float32)
+    )
 
     # Stage: indexing (95-100%)
     progress.update(stage="indexing", progress=92, current_file="Building FAISS index...")

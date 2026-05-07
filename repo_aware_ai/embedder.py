@@ -1,131 +1,111 @@
 """Embedder using Google GenAI embeddings."""
 from __future__ import annotations
 
-import time
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import List
-
-logger = logging.getLogger("rai.embedder")
 
 import numpy as np
 
 from .config import get_config
+from ._retry import gemini_retry
+
+logger = logging.getLogger("rai.embedder")
+
+
+# Known output dimensions for supported embedding models.
+# google-genai supports `output_dimensionality` to truncate, but we keep
+# native dims by default for best quality.
+_MODEL_DIMS = {
+    "gemini-embedding-001": 768,
+    "text-embedding-004": 768,
+    "models/embedding-001": 768,
+}
+_DEFAULT_DIM = 768
 
 
 @dataclass
 class Embedder:
     """Embedder using Google's gemini-embedding model.
-    
-    Uses the new google.genai package with gemini-embedding-001.
-    Produces 768-dimensional normalized embeddings.
+
+    Produces L2-normalized float32 vectors suitable for FAISS inner-product
+    search. Default model is gemini-embedding-001 (768 dimensions).
     """
-    
+
     model_name: str = "gemini-embedding-001"
-    _dim: int = field(default=768, repr=False, init=False)
-    
+    output_dim: int | None = None  # None = use native model dim
+    _dim: int = field(default=_DEFAULT_DIM, repr=False, init=False)
+
     def __post_init__(self) -> None:
-        """Initialize the Google GenAI client."""
         try:
             from google import genai
             from google.genai import types
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
-                "google-genai is required. Install with:\n"
-                "  pip install google-genai"
-            )
-        
+                "google-genai is required. Install with `pip install google-genai`."
+            ) from e
+
         config = get_config()
+        if getattr(config, "embedding_model", None):
+            self.model_name = config.embedding_model
+
+        # Resolve dimension: explicit override > known native dim > default.
+        if self.output_dim is not None:
+            self._dim = self.output_dim
+        else:
+            self._dim = _MODEL_DIMS.get(self.model_name.split("/")[-1], _DEFAULT_DIM)
+
         self._client = genai.Client(api_key=config.google_api_key)
         self._types = types
-        # Use gemini-embedding-001 if not specified in config
-        if hasattr(config, 'embedding_model') and config.embedding_model:
-            self.model_name = config.embedding_model
-    
-    def embed_texts(self, texts: List[str], batch_size: int = 100) -> np.ndarray:
-        """Embed a list of texts into normalized vectors.
-        
-        Args:
-            texts: List of text strings to embed.
-            batch_size: Maximum number of texts to embed per API call (API limit is 100).
-        
-        Returns:
-            numpy array of shape (N, 768) with float32 normalized embeddings.
-        """
-        if not texts:
-            return np.array([], dtype=np.float32).reshape(0, self._dim)
-        
-        # API has a hard limit of 100 requests per batch
-        if batch_size > 100:
-            batch_size = 100
-        
-        all_embeddings = []
-        
-        logger.info(f"Embedding {len(texts)} texts in batches of {batch_size} (Google GenAI)")
-        t0 = time.time()
-        
-        # Process texts in batches
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            
-            # Embed the batch
-            result = self._client.models.embed_content(
-                model=self.model_name,
-                contents=batch,
-                config=self._types.EmbedContentConfig(
-                    task_type="RETRIEVAL_DOCUMENT",
-                    output_dimensionality=768
-                )
-            )
-            
-            # Extract embeddings from result
-            batch_embeddings = [emb.values for emb in result.embeddings]
-            all_embeddings.extend(batch_embeddings)
-            
-            # Optional: Add a small delay between batches to avoid rate limiting
-            if i + batch_size < len(texts):
-                time.sleep(0.1)
-        
-        # Convert to numpy array
-        embeddings = np.array(all_embeddings, dtype=np.float32)
-        
-        # Normalize for cosine similarity via inner product
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        norms = np.where(norms == 0, 1, norms)  # Avoid division by zero
-        embeddings = embeddings / norms
-        
-        logger.info(f"Embedded {len(texts)} texts in {(time.time() - t0):.2f}s")
-        return embeddings
-    
-    def embed_query(self, query: str) -> np.ndarray:
-        """Embed a single query string.
-        
-        Args:
-            query: The query string to embed.
-        
-        Returns:
-            numpy array of shape (768,) with float32 normalized embedding.
-        """
+
+    @gemini_retry
+    def _embed_batch(self, batch: List[str], task_type: str) -> List[List[float]]:
         result = self._client.models.embed_content(
             model=self.model_name,
-            contents=query,
+            contents=batch,
             config=self._types.EmbedContentConfig(
-                task_type="RETRIEVAL_QUERY",
-                output_dimensionality=768
-            )
+                task_type=task_type,
+                output_dimensionality=self._dim,
+            ),
         )
-        
-        # Extract embedding from response
-        embedding = np.array(result.embeddings[0].values, dtype=np.float32)
-        
-        # Normalize
-        norm = np.linalg.norm(embedding)
+        return [emb.values for emb in result.embeddings]
+
+    def embed_texts(self, texts: List[str], batch_size: int = 100) -> np.ndarray:
+        """Embed many texts. Returns (N, dim) L2-normalized float32 array."""
+        if not texts:
+            return np.empty((0, self._dim), dtype=np.float32)
+
+        batch_size = min(batch_size, 100)  # API hard limit
+        all_embeddings: List[List[float]] = []
+
+        logger.info("Embedding %d texts in batches of %d (%s)", len(texts), batch_size, self.model_name)
+        t0 = time.time()
+
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            all_embeddings.extend(self._embed_batch(batch, "RETRIEVAL_DOCUMENT"))
+            if i + batch_size < len(texts):
+                time.sleep(0.1)  # gentle pacing
+
+        embeddings = np.asarray(all_embeddings, dtype=np.float32)
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1, norms)
+        embeddings /= norms
+
+        logger.info("Embedded %d texts in %.2fs", len(texts), time.time() - t0)
+        return embeddings
+
+    def embed_query(self, query: str) -> np.ndarray:
+        """Embed a single query. Returns (dim,) L2-normalized float32 array."""
+        values = self._embed_batch([query], "RETRIEVAL_QUERY")[0]
+        embedding = np.asarray(values, dtype=np.float32)
+        norm = float(np.linalg.norm(embedding))
         if norm > 0:
             embedding = embedding / norm
-        
         return embedding
-    
+
     @property
     def dimension(self) -> int:
-        """Return the embedding dimension (768 for gemini-embedding-001)."""
+        """Output embedding dimension."""
         return self._dim
