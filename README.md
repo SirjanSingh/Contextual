@@ -66,8 +66,9 @@ repo-aware-ai-server --repo /path/to/your/project
 # open http://localhost:8360
 ```
 
-**VS Code extension** — see [extension/README.md](extension/README.md) for now;
-end-to-end install lands in Phase 3 of the refactor (issue tracker has the plan).
+**VS Code extension** — see [extension/README.md](extension/README.md).
+On first activation the extension bootstraps its own Python venv and installs the
+backend automatically — no manual `pip install` needed.
 
 ---
 
@@ -105,7 +106,7 @@ Environment variables (also accepted in `.env`):
 | `GOOGLE_API_KEY` | yes | — | Google Gemini API key |
 | `GEMINI_MODEL` | no | `models/gemini-2.5-flash` | LLM for answers and compression |
 | `EMBEDDING_MODEL` | no | `gemini-embedding-001` | 768-dim embedding model |
-| `RAI_PORT` | no | `8360` | Backend HTTP port |
+| `RAI_PORT` | no | `8360` | Backend HTTP port (use `18360` on Windows — ports near 8360 are often reserved by Hyper-V) |
 | `RAI_DATA_DIR` | no | `data/index` | FAISS index + metadata cache root |
 | `RAI_AUTO_INDEX` | no | — | Path to auto-index when the server starts |
 
@@ -150,11 +151,10 @@ For deeper reading: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Status & roadmap
 
-This repository is mid-refactor toward a polished open-source release. The plan
-lives at [docs/ROADMAP.md](docs/ROADMAP.md).
+Phases 1–4 are complete. The plan lives at [docs/ROADMAP.md](docs/ROADMAP.md).
 
-Currently working: CLI, web backend, web frontend (chat + repo map).
-Currently flaky: VS Code extension end-to-end install (being fixed in Phase 3).
+Currently working: CLI, web backend, web frontend (chat + repo map), VS Code extension (bootstrap + streaming chat + repo map panel).
+Up next: Phase 5 — GitHub Actions CI, PyPI publish, VS Code Marketplace.
 
 ---
 

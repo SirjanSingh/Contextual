@@ -65,16 +65,26 @@ React 18 + Vite + Tailwind + Zustand + Three.js. Renders:
 Talks to the backend via Vite's dev proxy or direct `/` mount in production.
 
 ### VS Code extension (`extension/`)
-TypeScript, bundled with esbuild. On activation it spawns the Python backend
-as a sidecar process and exposes:
+TypeScript, bundled with esbuild. Activation sequence:
+
+1. **Bootstrap** (`backendBootstrap.ts`) — finds system Python ≥ 3.10, creates
+   a venv under `globalStorageUri/venv`, and `pip install`s the backend. Fast-path
+   skips install if `repo_aware_ai.server` is already importable in the venv.
+2. **Spawn** (`backendProcess.ts`) — starts `python -m uvicorn repo_aware_ai.server:app`
+   as a sidecar, polls `/health`, then emits `onReady`.
+3. **Auto-index** — indexes the open workspace automatically once the backend is ready.
+
+Exposes:
 
 - Commands: ask question, explain selection, find related code, explain repo,
-  rebuild index.
-- Webview views: chat panel, repo map panel.
+  rebuild index, show backend logs, set API key.
+- Webview views: chat panel (live streaming), repo map panel.
 - Providers: CodeLens (related-chunk hints) and Hover ("used in …").
-- Status bar: chunk count + indexing state.
+- Status bar: chunk count + indexing state (down / indexing / ready / error).
 
-The sidecar lifecycle lives in `extension/src/services/backendProcess.ts`.
+The chat panel consumes `/query/stream` SSE and appends tokens in real-time.
+The `openSource` handler resolves workspace-relative paths and opens the file at
+the chunk's start character offset.
 
 ## Pipeline modules
 
@@ -93,8 +103,9 @@ All inside `repo_aware_ai/`.
 | `query_expander.py` | Generates 2–3 paraphrases for query diversity. |
 | `multi_query.py` | Heuristic decomposition of compound questions. |
 | `conversation.py` | Bounded ring-buffer of recent turns. |
-| `qa.py` | Wires it all together. Lazily instantiates optional components. |
-| `llm.py` | Gemini wrapper (rate-limit handling, context budgeting). |
+| `qa.py` | Wires it all together. `_prepare()` runs everything up to the LLM call; `ask()` / `stream_ask()` finish it. |
+| `llm.py` | Gemini wrapper. `answer()` for one-shot; `stream_answer()` yields incremental text chunks. |
+| `_retry.py` | `@gemini_retry` decorator (tenacity): retries 429 / RESOURCE\_EXHAUSTED / 503 / 500 up to `RAI_GEMINI_MAX_RETRIES` times. |
 | `config.py` | `.env` loading + defaults. |
 | `debug.py` | Best-effort JSON debug logs. |
 | `progress_tracker.py` | Upload / indexing progress with stages and ETA. |

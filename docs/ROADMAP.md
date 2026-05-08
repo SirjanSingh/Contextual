@@ -12,33 +12,32 @@ surfaces: CLI, web app, and VS Code extension.
 - [x] `README.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `ROADMAP.md`
 - [x] Move stale prompts and notes to `docs/archive/`
 
-## Phase 2 — Backend hardening
-- [ ] Real Gemini streaming for `/query/stream` (or remove if unsupported)
-- [ ] Add `tenacity`-based retries on Gemini API calls (auth / 429 / transient)
-- [ ] Thread-safety on `ConversationHistory`
-- [ ] Derive embedding dimension from the embedder, drop the hardcoded 768
-- [ ] Make `/search` `top_k` a request parameter
-- [ ] Surface background-indexing errors reliably (status flips to `"error"`)
-- [ ] Smoke test suite (`pytest`, ~10 tests, mocked LLM)
+## Phase 2 — Backend hardening ✅
+- [x] Real Gemini streaming for `/query/stream` via `stream_ask()` generator
+- [x] Add `tenacity`-based retries on Gemini API calls (429 / RESOURCE_EXHAUSTED / 503 / 500) via `_retry.py`
+- [x] Thread-safety on `ConversationHistory` (added `threading.Lock`)
+- [x] Derive embedding dimension from the embedder, drop the hardcoded 768 (`_MODEL_DIMS` + `dimension` property)
+- [x] Make `/search` `top_k` a request parameter
+- [x] Surface background-indexing errors reliably (status flips to `"error"`)
+- [x] Smoke test suite (`pytest`, 14 tests across loader / chunker / conversation / indexer)
 
-## Phase 3 — VS Code extension end-to-end
-- [ ] Bootstrap a venv on first activation and `pip install` the backend
-- [ ] Reliable `_resolveBackendRoot()` (installed CLI → bundled source → repo)
-- [ ] Wire `chatPanel` `openSource` handler (open file at line)
-- [ ] Strip dead endpoints from `backendClient.ts` or connect them
-- [ ] Fix Windows path normalisation in `findRelated.ts`
-- [ ] Switch chat to `/query/stream` for streaming UX
-- [ ] Surface backend errors as VS Code notifications, not silent
-- [ ] Status-bar states: down / indexing / ready / error
-- [ ] "Show backend logs" command
+## Phase 3 — VS Code extension end-to-end ✅
+- [x] Bootstrap a venv on first activation and `pip install` the backend (`backendBootstrap.ts`)
+- [x] Reliable install-source resolution: checks local pyproject.toml → falls back to PyPI
+- [x] Wire `chatPanel` `openSource` handler (open file at start character)
+- [x] Strip dead endpoints from `backendClient.ts`; connected `/query/stream`
+- [x] Switch chat to `/query/stream` for live token streaming with blinking cursor
+- [x] Surface backend errors as VS Code notifications with "Show Logs" action
+- [x] Status-bar states: down / indexing / ready / error
+- [x] "Show backend logs" command (always registered, even if activation fails)
+- [x] `PYTHONIOENCODING=utf-8` + `PYTHONUNBUFFERED=1` for reliable sidecar I/O
 
-## Phase 4 — Frontend polish
-- [ ] Drop unused deps (`react-syntax-highlighter`, `react-markdown`)
-- [ ] `ErrorBoundary` around the app
-- [ ] `VITE_BACKEND_URL` env support
-- [ ] Render real model from `/health` (not hardcoded badge)
-- [ ] Loading skeletons for repo-map detail panels
-- [ ] Tighten `useStore` types — kill `any` in `RepoMapView`
+## Phase 4 — Frontend polish ✅
+- [x] `ErrorBoundary` around the app
+- [x] `VITE_BACKEND_URL` env support (read via `loadEnv`; WS URL auto-derived)
+- [x] Render real model + embedding model from `/health` (`setBackendInfo()` in store)
+- [x] Typed `RepoMapSummary`, `SymbolDetail`, `CommunityDetail`, `ProcessDetail` in `client.ts`
+- [x] Tightened `useStore` — removed dead `showRepoExplorer` / `showUploadZone` state
 
 ## Phase 5 — OSS readiness
 - [ ] GitHub Actions CI: lint, typecheck, build (all surfaces), tests
