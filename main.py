@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from app.embedder import Embedder
-from app.llm import LLMClient
-from app.qa import QAEngine
+from repo_aware_ai.embedder import Embedder
+from repo_aware_ai.llm import LLMClient
+from repo_aware_ai.qa import QAEngine
 
 
 def parse_args() -> argparse.Namespace:

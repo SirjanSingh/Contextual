@@ -55,8 +55,6 @@ debug_logs/
 logs/
 
 # Test files
-test_models.py
-test_api.py
 *.test.py
 
 # Secrets & Config
@@ -65,10 +63,6 @@ test_api.py
 !.env.example
 *.key
 *.pem
-
-# Project specific
-.github/
-.agent/
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
@@ -80,3 +74,17 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+
+# Frontend
+node_modules/
+dist/
+
+# Local dev scratch
+tmp/
+.claude/
+.agent/
+
+# Old artifacts
+B_Optimal_Shifts.cpp
+app (2).zip
+*.vsix

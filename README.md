@@ -1,129 +1,168 @@
-# Repo-Aware AI Assistant (Google API)
+# Repo-Aware AI
 
-A "talk to your codebase" tool:
+> Talk to your codebase. A local RAG (retrieval-augmented generation) assistant that
+> indexes any repository, retrieves the relevant code chunks, and answers natural-language
+> questions with file-anchored citations — powered by Google Gemini.
 
-- Indexes a repository locally
-- Retrieves relevant code chunks (RAG)
-- Uses Google Gemini for intelligent answers
-- Returns answers with file references
+Three ways to use it:
 
-## Tech Stack
+| Surface | What it gives you |
+|---------|-------------------|
+| **CLI** | Interactive REPL: `repo-aware-ai --repo .` |
+| **Web app** | Chat UI + force-directed repo map at `http://localhost:8360` |
+| **VS Code extension** | Inline `Ask` / `Explain selection` / `Find related` + chat sidebar + repo map panel |
 
-- **LLM**: Google Gemini API (`gemini-2.0-flash-exp`)
-- **Embeddings**: Google AI (`text-embedding-004`, 768 dims)
-- **Vector Store**: FAISS (CPU, local)
-- **Language**: Python 3.10+
+All three share the same Python backend and FAISS vector index.
 
-## Setup
+---
 
-### 1. Get Google API Key
+## Quick start
 
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Create a new API key
-3. Copy the key
+### 1. Get a Google API key
 
-### 2. Configure Environment
+Create one at [Google AI Studio](https://aistudio.google.com/app/apikey) — the free
+tier is plenty for personal use.
 
-```powershell
-# Create and activate venv
+### 2. Install the backend
+
+```bash
+git clone https://github.com/SirjanSingh/repo-aware-ai
+cd repo-aware-ai
+
 python -m venv .venv
+# Windows PowerShell
 .\.venv\Scripts\Activate.ps1
+# macOS / Linux
+source .venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Note: This installs google-genai (new package), not google-generativeai (deprecated)
+pip install -e .[all]
 ```
 
-### 3. Set API Key
+> The `[all]` extra pulls in the cross-encoder reranker and the tree-sitter / igraph
+> graph-analysis stack. To skip the heavy ML bits, use `pip install -e .` for the
+> minimum viable install.
 
-Create a `.env` file in the project root:
+### 3. Configure your API key
 
-```env
-GOOGLE_API_KEY=your_api_key_here
+```bash
+cp .env.example .env
+# then edit .env and paste your key into GOOGLE_API_KEY=
 ```
 
-Or set it as an environment variable:
+### 4. Pick an interface
 
-```powershell
-$env:GOOGLE_API_KEY = "your_api_key_here"
+**CLI**
+```bash
+repo-aware-ai --repo /path/to/your/project
 ```
 
-## Run
+**Web app** (FastAPI backend + built React frontend)
+```bash
+# build the frontend (one-time)
+cd frontend && npm install && npm run build && cd ..
 
-Index a repo and start a Q&A loop:
-
-```powershell
-python main.py --repo "C:\path\to\repo"
+# start the server
+repo-aware-ai-server --repo /path/to/your/project
+# open http://localhost:8360
 ```
 
-Force rebuild the index:
+**VS Code extension** — see [extension/README.md](extension/README.md).
+On first activation the extension bootstraps its own Python venv and installs the
+backend automatically — no manual `pip install` needed.
 
-```powershell
-python main.py --repo "C:\path\to\repo" --rebuild
+---
+
+## What it does
+
+```
+Repository ──► Loader ──► Chunker ──► Embedder ──► FAISS index ─┐
+                                                                 │
+              ┌──────────────────────────────────────────────────┘
+              ▼
+   ┌─► Hybrid retrieval (BM25 + vector) ─► Reranker ─► Compressor ─► Gemini ─► Answer + citations
+   │
+   └─► Repo-map (tree-sitter symbols → graph → Leiden communities → process traces)
 ```
 
-## How It Works (Pipeline)
+Features that come on by default:
 
-1. **Loader**: Reads code files from disk, ignores junk directories
-2. **Chunker**: Splits files into overlapping chunks (1800 chars, 250 overlap)
-3. **Embedder**: Converts chunks to 768-dim vectors via Google AI API
-4. **Indexer**: Stores vectors + metadata in FAISS; caches on disk
-5. **Retriever**: Finds top-k relevant chunks per question
-6. **LLM**: Sends context + question to Gemini for answer generation
-7. **Answer**: Prints answer + sources like `path:start-end`
+- **Hybrid retrieval** — combines BM25 keyword scoring with vector similarity via reciprocal rank fusion.
+- **Cross-encoder reranking** — `ms-marco-MiniLM-L-6-v2` re-scores the top candidates for relevance.
+- **Contextual compression** — Gemini extracts only the question-relevant lines from each chunk before answering.
+- **Multi-query decomposition** — breaks compound questions into sub-questions and merges results.
+- **Conversation memory** — last 5 turns of history feed the next answer.
+- **Repo map** — tree-sitter parses Python / JS / TS into a symbol graph, detects communities of related code with Leiden, and traces likely call processes.
 
-## Options
+Each can be disabled via CLI flags (`--no-rerank`, `--no-hybrid`, `--no-expand`, `--no-compress`, `--no-multi-query`).
 
-| Flag            | Default      | Description                     |
-| --------------- | ------------ | ------------------------------- |
-| `--repo`        | required     | Path to target repository       |
-| `--cache`       | `data/index` | Cache directory for FAISS index |
-| `--rebuild`     | false        | Force rebuild the index         |
-| `--topk`        | 6            | Number of chunks to retrieve    |
-| `--temperature` | 0.2          | LLM temperature                 |
-| `--chunk_size`  | 1800         | Chunk size in characters        |
-| `--overlap`     | 250          | Chunk overlap in characters     |
+---
 
-## Environment Variables
+## Configuration
 
-| Variable          | Required | Default              | Description            |
-| ----------------- | -------- | -------------------- | ---------------------- |
-| `GOOGLE_API_KEY`  | Yes      | -                    | Your Google API key    |
-| `GEMINI_MODEL`    | No       | `gemini-1.5-flash`   | Gemini model to use    |
-| `EMBEDDING_MODEL` | No       | `text-embedding-004` | Embedding model to use |
+Environment variables (also accepted in `.env`):
 
-## Notes
+| Variable | Required | Default | Purpose |
+|----------|----------|---------|---------|
+| `GOOGLE_API_KEY` | yes | — | Google Gemini API key |
+| `GEMINI_MODEL` | no | `models/gemini-2.5-flash` | LLM for answers and compression |
+| `EMBEDDING_MODEL` | no | `gemini-embedding-001` | 768-dim embedding model |
+| `RAI_PORT` | no | `8360` | Backend HTTP port (use `18360` on Windows — ports near 8360 are often reserved by Hyper-V) |
+| `RAI_DATA_DIR` | no | `data/index` | FAISS index + metadata cache root |
+| `RAI_AUTO_INDEX` | no | — | Path to auto-index when the server starts |
 
-- The cache is stored under `data/index/<repo_id>/`
-- First run requires internet to call Google APIs
-- Subsequent runs use cached embeddings (fast)
-- API costs are minimal (~$0.001 per 1000 chunks)
+CLI flags for `repo-aware-ai` (CLI Q&A REPL):
 
-## Project Structure
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--repo` | required | Repository to index |
+| `--cache` | `data/index` | Index cache directory |
+| `--rebuild` | false | Force rebuild from scratch |
+| `--topk` | 6 | Chunks fed to the LLM |
+| `--temperature` | 0.2 | LLM sampling temperature |
+| `--chunk_size` / `--overlap` | 1800 / 250 | Chunking parameters |
+| `--ast-chunk` | false | AST-based chunking for Python |
+| `--no-rerank` / `--no-hybrid` / `--no-expand` / `--no-compress` / `--no-multi-query` | — | Disable individual stages |
+
+---
+
+## Repository layout
 
 ```
 repo-aware-ai/
-├── app/
-│   ├── config.py      # API configuration
-│   ├── loader.py      # Load repository files
-│   ├── chunker.py     # Split into chunks
-│   ├── embedder.py    # Google embeddings
-│   ├── indexer.py     # FAISS index management
-│   ├── retriever.py   # Chunk retrieval
-│   ├── llm.py         # Gemini LLM client
-│   ├── qa.py          # QA engine orchestration
-│   └── debug.py       # Debug logging
-├── data/index/        # Cached FAISS indices
-├── main.py            # CLI entry point
-├── requirements.txt   # Python dependencies
-├── .env.example       # Environment template
-└── README.md          # This file
+├── repo_aware_ai/         # Python package (the RAG engine)
+│   ├── server.py          # FastAPI app
+│   ├── qa.py              # End-to-end pipeline orchestration
+│   ├── loader/chunker/embedder/indexer/retriever
+│   ├── hybrid_search.py reranker.py compressor.py
+│   ├── query_expander.py multi_query.py conversation.py
+│   └── repo_map/          # Symbol graph, communities, processes
+├── extension/             # VS Code extension (TypeScript, esbuild)
+├── frontend/              # React + Vite + Tailwind web app
+├── evaluation/            # Eval harness + question set
+├── docs/                  # Architecture, contributing, archive
+├── main.py                # CLI entry point
+├── dev_server.py          # Dev server launcher
+└── pyproject.toml
 ```
 
-## Next Steps
+For deeper reading: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-- [ ] FastAPI backend + UI
-- [ ] VS Code extension
-- [ ] Multi-repository support
-- [ ] Streaming responses
+---
+
+## Status & roadmap
+
+Phases 1–4 are complete. The plan lives at [docs/ROADMAP.md](docs/ROADMAP.md).
+
+Currently working: CLI, web backend, web frontend (chat + repo map), VS Code extension (bootstrap + streaming chat + repo map panel).
+Up next: Phase 5 — GitHub Actions CI, PyPI publish, VS Code Marketplace.
+
+---
+
+## Contributing
+
+PRs welcome. Read [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for setup,
+coding conventions, and how to run the test suite.
+
+## License
+
+[MIT](LICENSE) © Sirjan Singh

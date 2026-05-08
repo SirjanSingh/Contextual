@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+  <!-- Neural network + code brackets icon -->
+  <circle cx="12" cy="12" r="2.5" fill="#58a6ff" stroke="none"/>
+  <circle cx="5" cy="7" r="1.5" fill="#3fb950" stroke="none"/>
+  <circle cx="19" cy="7" r="1.5" fill="#d29922" stroke="none"/>
+  <circle cx="5" cy="17" r="1.5" fill="#f78166" stroke="none"/>
+  <circle cx="19" cy="17" r="1.5" fill="#bc8cff" stroke="none"/>
+  <line x1="12" y1="12" x2="5" y2="7" stroke="#58a6ff" stroke-width="1" opacity="0.7"/>
+  <line x1="12" y1="12" x2="19" y2="7" stroke="#58a6ff" stroke-width="1" opacity="0.7"/>
+  <line x1="12" y1="12" x2="5" y2="17" stroke="#58a6ff" stroke-width="1" opacity="0.7"/>
+  <line x1="12" y1="12" x2="19" y2="17" stroke="#58a6ff" stroke-width="1" opacity="0.7"/>
+  <line x1="5" y1="7" x2="5" y2="17" stroke="#3fb950" stroke-width="0.8" opacity="0.5"/>
+  <line x1="19" y1="7" x2="19" y2="17" stroke="#d29922" stroke-width="0.8" opacity="0.5"/>
+</svg>

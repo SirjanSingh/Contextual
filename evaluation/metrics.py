@@ -98,9 +98,9 @@ def _extract_filename(source: str) -> str:
     """Extract filename from source path or reference.
     
     Examples:
-        - 'app/loader.py:123-456' -> 'loader.py'
-        - 'app/loader.py' -> 'loader.py'
-        - 'g:\\projs\\repo\\app\\loader.py' -> 'loader.py'
+        - 'repo_aware_ai/loader.py:123-456' -> 'loader.py'
+        - 'repo_aware_ai/loader.py' -> 'loader.py'
+        - 'g:\\projs\\repo\\repo_aware_ai\\loader.py' -> 'loader.py'
     """
     # Remove line numbers if present
     if ':' in source:
