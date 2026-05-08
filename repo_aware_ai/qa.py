@@ -1,11 +1,12 @@
 """End-to-end RAG pipeline orchestration."""
+
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterator, List, Tuple
 
 logger = logging.getLogger("rai.qa")
 
@@ -41,7 +42,7 @@ class QAEngine:
     use_graph_context: bool = True
 
     index = None
-    metadata: List[Dict] | None = None
+    metadata: list[dict] | None = None
     cache_dir: Path | None = None
     _reranker: Reranker | None = None
     _conversation: ConversationHistory | None = None
@@ -113,7 +114,7 @@ class QAEngine:
     # ──────────────────────────────────────────────
     # Query pipeline
     # ──────────────────────────────────────────────
-    def _prepare(self, question: str) -> Tuple[List[RetrievedChunk], List[str], str]:
+    def _prepare(self, question: str) -> tuple[list[RetrievedChunk], list[str], str]:
         """Run everything up to (but not including) the final LLM answer.
 
         Returns (final_chunks, sources, conversation_context).
@@ -142,7 +143,7 @@ class QAEngine:
             )
 
         # 2. Expand each base query
-        queries: List[str] = []
+        queries: list[str] = []
         if self.use_query_expansion:
             t0 = time.time()
             if self._query_expander is None:
@@ -159,10 +160,12 @@ class QAEngine:
 
         # Dedupe queries
         seen_q: set = set()
-        queries = [q for q in queries if not (q.strip().lower() in seen_q or seen_q.add(q.strip().lower()))]
+        queries = [
+            q for q in queries if not (q.strip().lower() in seen_q or seen_q.add(q.strip().lower()))
+        ]
 
         # 3. Retrieve per query
-        all_chunks: List[RetrievedChunk] = []
+        all_chunks: list[RetrievedChunk] = []
         seen_keys: set = set()
         t0 = time.time()
         for q in queries:
@@ -238,7 +241,7 @@ class QAEngine:
         sources = [f"{c.source}:{c.start_char}-{c.end_char}" for c in chunks]
         return chunks, sources, conversation_context
 
-    def ask(self, question: str) -> Tuple[str, List[str]]:
+    def ask(self, question: str) -> tuple[str, list[str]]:
         t_overall = time.time()
         chunks, sources, conv_ctx = self._prepare(question)
 
@@ -252,7 +255,7 @@ class QAEngine:
         logger.info("[QA] total: %.2fs", time.time() - t_overall)
         return answer, sources
 
-    def stream_ask(self, question: str) -> Tuple[Iterator[str], List[str]]:
+    def stream_ask(self, question: str) -> tuple[Iterator[str], list[str]]:
         """Stream the answer as it is generated.
 
         Returns (text_iterator, sources). The iterator yields incremental
@@ -261,7 +264,7 @@ class QAEngine:
         """
         chunks, sources, conv_ctx = self._prepare(question)
 
-        accumulated: List[str] = []
+        accumulated: list[str] = []
 
         def gen() -> Iterator[str]:
             for piece in self.llm.stream_answer(question, chunks, conv_ctx):

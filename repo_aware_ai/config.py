@@ -1,24 +1,24 @@
 """Configuration management for Google API credentials."""
+
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
 class Config:
     """Configuration for Google API services."""
-    
+
     google_api_key: str
     gemini_model: str = "models/gemini-2.5-flash"
     embedding_model: str = "gemini-embedding-001"
-    
+
     @classmethod
-    def from_env(cls) -> "Config":
+    def from_env(cls) -> Config:
         """Load configuration from environment variables.
-        
+
         Environment variables:
             GOOGLE_API_KEY: Required. Your Google API key.
             GEMINI_MODEL: Optional. Model name for chat (default: gemini-2.0-flash-exp).
@@ -28,7 +28,7 @@ class Config:
         env_path = Path(".env")
         if env_path.exists():
             _load_dotenv(env_path)
-        
+
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError(
@@ -37,13 +37,13 @@ class Config:
                 "  - Environment variable: $env:GOOGLE_API_KEY = 'your_key'\n"
                 "  - Or create a .env file with: GOOGLE_API_KEY=your_key"
             )
-        
+
         return cls(
             google_api_key=api_key,
             gemini_model=os.getenv("GEMINI_MODEL", "models/gemini-2.5-flash"),
             embedding_model=os.getenv("EMBEDDING_MODEL", "gemini-embedding-001"),
         )
-    
+
     def validate(self) -> None:
         """Validate the configuration."""
         if not self.google_api_key:
@@ -73,7 +73,7 @@ def _load_dotenv(path: Path) -> None:
 
 
 # Singleton instance (lazy loaded)
-_config: Optional[Config] = None
+_config: Config | None = None
 
 
 def get_config() -> Config:

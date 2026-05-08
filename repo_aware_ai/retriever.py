@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, List, Optional, Set
+from typing import TYPE_CHECKING
 
-import numpy as np
 import faiss
+import numpy as np
 
-from .embedder import Embedder
 from .debug import log_json
+from .embedder import Embedder
 
 if TYPE_CHECKING:
     from .repo_map.graph import KnowledgeGraph
@@ -26,11 +26,11 @@ class RetrievedChunk:
 def retrieve(
     *,
     index: faiss.Index,
-    metadata: List[Dict],
+    metadata: list[dict],
     embedder: Embedder,
     question: str,
     top_k: int = 6,
-) -> List[RetrievedChunk]:
+) -> list[RetrievedChunk]:
     q = embedder.embed_query(question).astype(np.float32)
     q = q.reshape(1, -1)
 
@@ -38,9 +38,9 @@ def retrieve(
     scores = scores[0].tolist()
     ids = ids[0].tolist()
 
-    results: List[RetrievedChunk] = []
+    results: list[RetrievedChunk] = []
 
-    for score, idx in zip(scores, ids):
+    for score, idx in zip(scores, ids, strict=False):
         if idx < 0 or idx >= len(metadata):
             continue
 
@@ -76,15 +76,15 @@ def retrieve(
 def retrieve_with_graph_context(
     *,
     index: faiss.Index,
-    metadata: List[Dict],
+    metadata: list[dict],
     embedder: Embedder,
     question: str,
     top_k: int = 6,
-    repo_graph: Optional["KnowledgeGraph"] = None,
-    repo_map: Optional["RepoMapData"] = None,
+    repo_graph: KnowledgeGraph | None = None,
+    repo_map: RepoMapData | None = None,
     graph_hops: int = 1,
     graph_bonus: float = 0.05,
-) -> List[RetrievedChunk]:
+) -> list[RetrievedChunk]:
     """Retrieve chunks and expand with graph-related symbols.
 
     After initial FAISS retrieval, looks up each chunk's file in the repo map,
@@ -93,22 +93,24 @@ def retrieve_with_graph_context(
 
     Falls back to plain `retrieve()` if repo_graph is None.
     """
-    initial = retrieve(index=index, metadata=metadata, embedder=embedder, question=question, top_k=top_k)
+    initial = retrieve(
+        index=index, metadata=metadata, embedder=embedder, question=question, top_k=top_k
+    )
 
     if repo_graph is None:
         return initial
 
     # Build file -> chunks lookup from metadata
-    file_chunks: Dict[str, List[Dict]] = {}
+    file_chunks: dict[str, list[dict]] = {}
     for m in metadata:
         fp = m.get("source", "")
         file_chunks.setdefault(fp, []).append(m)
 
-    seen_keys: Set[tuple] = {(c.source, c.start_char, c.end_char) for c in initial}
-    extra: List[RetrievedChunk] = []
+    seen_keys: set[tuple] = {(c.source, c.start_char, c.end_char) for c in initial}
+    extra: list[RetrievedChunk] = []
 
     # Build membership map for community-mates lookup
-    membership_map: Dict[str, str] = {}
+    membership_map: dict[str, str] = {}
     if repo_map:
         for m in repo_map.communities.memberships:
             membership_map[m.node_id] = m.community_id
@@ -116,11 +118,12 @@ def retrieve_with_graph_context(
     for chunk in initial:
         # Find all symbols in this file
         file_symbols = [
-            n for n in repo_graph.nodes_by_file(chunk.source)
+            n
+            for n in repo_graph.nodes_by_file(chunk.source)
             if n.label in ("Function", "Class", "Method")
         ]
 
-        related_files: Set[str] = set()
+        related_files: set[str] = set()
 
         for sym in file_symbols:
             # Add files of callees and callers (1 hop)
@@ -150,13 +153,15 @@ def retrieve_with_graph_context(
                 key = (m["source"], m["start_char"], m["end_char"])
                 if key not in seen_keys:
                     seen_keys.add(key)
-                    extra.append(RetrievedChunk(
-                        text=m["text"],
-                        source=m["source"],
-                        start_char=int(m["start_char"]),
-                        end_char=int(m["end_char"]),
-                        score=chunk.score * (1.0 - graph_bonus),
-                    ))
+                    extra.append(
+                        RetrievedChunk(
+                            text=m["text"],
+                            source=m["source"],
+                            start_char=int(m["start_char"]),
+                            end_char=int(m["end_char"]),
+                            score=chunk.score * (1.0 - graph_bonus),
+                        )
+                    )
 
     # Merge and re-sort by score, keep top_k * 2 for downstream reranker
     combined = initial + extra

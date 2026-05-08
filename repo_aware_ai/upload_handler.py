@@ -1,23 +1,21 @@
 """Handle directory uploads and trigger indexing with progress."""
+
 from __future__ import annotations
 
-import asyncio
-import shutil
 import tempfile
 from pathlib import Path
-from typing import List
 
 from fastapi import UploadFile
 
-from .progress_tracker import UploadProgress
+from .chunker import chunk_files
 from .embedder import Embedder
+from .indexer import build_or_load_index
 from .llm import LLMClient
 from .loader import load_repo_files
-from .chunker import chunk_files
-from .indexer import build_or_load_index
+from .progress_tracker import UploadProgress
 
 
-async def save_uploaded_files(files: List[UploadFile], progress: UploadProgress) -> str:
+async def save_uploaded_files(files: list[UploadFile], progress: UploadProgress) -> str:
     """Save uploaded files to a temp directory preserving relative paths."""
     temp_dir = Path(tempfile.mkdtemp(prefix="contextual_upload_"))
     progress.update(stage="uploading", progress=0)
@@ -49,7 +47,6 @@ def process_repository_sync(
     llm: LLMClient,
 ) -> None:
     """Run the full indexing pipeline with progress updates (blocking)."""
-    from .qa import QAEngine
 
     repo_root = Path(repo_path)
     cache = Path(cache_base)

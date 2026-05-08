@@ -3,39 +3,73 @@
 Walks a repo, filters by extension, prunes ignored directories, and reads
 file text safely.
 """
+
 from __future__ import annotations
 
 import fnmatch
 import logging
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Set
 
 logger = logging.getLogger("rai.loader")
 
 
 # Directories with these EXACT names are pruned during the walk.
-DEFAULT_IGNORE_DIRS: Set[str] = {
+DEFAULT_IGNORE_DIRS: set[str] = {
     # VCS
-    ".git", ".hg", ".svn", ".bzr",
+    ".git",
+    ".hg",
+    ".svn",
+    ".bzr",
     # IDE / editor
-    ".idea", ".vscode", ".vs", ".history",
+    ".idea",
+    ".vscode",
+    ".vs",
+    ".history",
     # Python caches and builds
-    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
-    ".cache", ".eggs",
-    "build", "dist", "out", "wheelhouse", "site-packages",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".cache",
+    ".eggs",
+    "build",
+    "dist",
+    "out",
+    "wheelhouse",
+    "site-packages",
     # Node / JS
-    "node_modules", ".next", ".nuxt", ".expo", ".parcel-cache",
-    ".turbo", ".svelte-kit", ".astro", ".vercel", ".netlify",
+    "node_modules",
+    ".next",
+    ".nuxt",
+    ".expo",
+    ".parcel-cache",
+    ".turbo",
+    ".svelte-kit",
+    ".astro",
+    ".vercel",
+    ".netlify",
     # Coverage / docs build
-    "coverage", "htmlcov", "_build",
+    "coverage",
+    "htmlcov",
+    "_build",
     # Other language build dirs
-    "target", "bin", "obj", "vendor", ".gradle", ".m2",
+    "target",
+    "bin",
+    "obj",
+    "vendor",
+    ".gradle",
+    ".m2",
     # Scratch / data
-    ".agent", ".claude", "tmp",
+    ".agent",
+    ".claude",
+    "tmp",
     # This project's own writable dirs
-    "data", "debug_logs",
+    "data",
+    "debug_logs",
 }
 
 
@@ -49,7 +83,7 @@ DEFAULT_IGNORE_DIR_PATTERNS: tuple[str, ...] = (
 )
 
 
-DEFAULT_IGNORE_FILES: Set[str] = {
+DEFAULT_IGNORE_FILES: set[str] = {
     ".env",
     ".env.local",
     ".env.production",
@@ -64,10 +98,20 @@ DEFAULT_IGNORE_FILES: Set[str] = {
 }
 
 
-DEFAULT_ALLOWED_EXTS: Set[str] = {
-    ".py", ".js", ".ts", ".tsx", ".jsx",
-    ".md", ".json", ".yaml", ".yml", ".toml",
-    ".txt", ".ini", ".cfg",
+DEFAULT_ALLOWED_EXTS: set[str] = {
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".md",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".txt",
+    ".ini",
+    ".cfg",
 }
 
 
@@ -110,12 +154,12 @@ def _safe_read_text(p: Path, max_bytes: int = DEFAULT_MAX_FILE_BYTES) -> str:
 
 def load_repo_files(
     repo_root: str | Path,
-    allowed_exts: Set[str] = DEFAULT_ALLOWED_EXTS,
-    ignore_dirs: Set[str] = DEFAULT_IGNORE_DIRS,
+    allowed_exts: set[str] = DEFAULT_ALLOWED_EXTS,
+    ignore_dirs: set[str] = DEFAULT_IGNORE_DIRS,
     ignore_dir_patterns: Iterable[str] = DEFAULT_IGNORE_DIR_PATTERNS,
-    ignore_files: Set[str] = DEFAULT_IGNORE_FILES,
+    ignore_files: set[str] = DEFAULT_IGNORE_FILES,
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
-) -> List[RepoFile]:
+) -> list[RepoFile]:
     """Walk `repo_root` and return readable text files matching `allowed_exts`.
 
     Pruning rules:
@@ -135,7 +179,7 @@ def load_repo_files(
         raise ValueError(f"repo_root is not a folder: {repo_root}")
 
     patterns = tuple(ignore_dir_patterns)
-    results: List[RepoFile] = []
+    results: list[RepoFile] = []
     skipped_dirs = 0
 
     for root, dirs, files in os.walk(repo_root):

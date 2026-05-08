@@ -16,6 +16,7 @@ Or test with curl:
     curl http://localhost:8360/graph/dependencies
     curl http://localhost:8360/graph/clusters
 """
+
 from __future__ import annotations
 
 import argparse
@@ -71,13 +72,14 @@ def main():
 ║  Health    : http://{args.host}:{args.port}/health            ║
 ║  API Key   : {api_key[:8]}...{api_key[-4:]}                  ║
 ║  Data Dir  : {args.data_dir:<35s}║
-║  Reload    : {'ON' if not args.no_reload else 'OFF'}                                ║
+║  Reload    : {"ON" if not args.no_reload else "OFF"}                                ║
 ╚══════════════════════════════════════════════════╝
 """)
 
     print("[dev] Starting uvicorn...\n")
 
     import uvicorn
+
     uvicorn.run(
         "repo_aware_ai.server:app",
         host=args.host,

@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest an idea or enhancement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the user-facing pain point, not the implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would the feature behave from a user's perspective?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, similar tools, or approaches you ruled out.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface(s)?
+      multiple: true
+      options:
+        - CLI
+        - Web app
+        - VS Code extension
+        - Backend / API
+        - Docs
+    validations:
+      required: true

@@ -3,35 +3,35 @@
 Public API:
     build_repo_map(repo_files, cache_dir, force_rebuild) -> (RepoMapData, KnowledgeGraph)
 """
+
 from __future__ import annotations
 
 import logging
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from ..loader import RepoFile
-from .types import RepoMapData
+from .cache import load_repo_map, save_repo_map
+from .communities import detect_communities
 from .graph import KnowledgeGraph
 from .parsing import parse_files
+from .processes import detect_processes
 from .relationships import (
-    build_import_relationships,
     build_call_relationships,
     build_heritage_relationships,
+    build_import_relationships,
     build_structure_relationships,
 )
-from .communities import detect_communities
-from .processes import detect_processes
-from .cache import save_repo_map, load_repo_map
+from .types import RepoMapData
 
 logger = logging.getLogger("rai.repo_map")
 
 
 def build_repo_map(
-    repo_files: List[RepoFile],
+    repo_files: list[RepoFile],
     cache_dir: Path,
     force_rebuild: bool = False,
-) -> Tuple[RepoMapData, KnowledgeGraph]:
+) -> tuple[RepoMapData, KnowledgeGraph]:
     """Build (or load cached) repo map from repo files.
 
     Returns (RepoMapData, KnowledgeGraph).
@@ -74,9 +74,11 @@ def build_repo_map(
     )
 
     save_repo_map(data, graph, cache_dir)
-    logger.info(f"[repo_map] built in {time.time()-t_start:.1f}s "
-                f"nodes={graph.node_count} rels={graph.relationship_count} "
-                f"communities={len(community_result.communities)} "
-                f"processes={len(process_result.processes)}")
+    logger.info(
+        f"[repo_map] built in {time.time() - t_start:.1f}s "
+        f"nodes={graph.node_count} rels={graph.relationship_count} "
+        f"communities={len(community_result.communities)} "
+        f"processes={len(process_result.processes)}"
+    )
 
     return data, graph

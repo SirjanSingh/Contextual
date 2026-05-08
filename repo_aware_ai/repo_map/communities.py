@@ -3,18 +3,20 @@
 Ported from GitNexus community-processor.ts.
 Groups symbols into functional modules based on CALLS/EXTENDS edges.
 """
+
 from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
 from pathlib import PurePosixPath
-from typing import Dict, List, Optional, Tuple
 
+from .graph import KnowledgeGraph
 from .types import (
-    CommunityDetectionResult, CommunityMembership, CommunityNode,
+    CommunityDetectionResult,
+    CommunityMembership,
+    CommunityNode,
     GraphRelationship,
 )
-from .graph import KnowledgeGraph
 
 logger = logging.getLogger("rai.repo_map.communities")
 
@@ -24,15 +26,31 @@ LARGE_GRAPH_THRESHOLD = 10_000
 
 # Generic folder names to skip for label generation
 GENERIC_FOLDERS = {
-    "src", "lib", "core", "utils", "util", "helpers", "helper",
-    "common", "shared", "internal", "pkg", "app", "main",
-    "components", "services", "models", "views", "controllers",
+    "src",
+    "lib",
+    "core",
+    "utils",
+    "util",
+    "helpers",
+    "helper",
+    "common",
+    "shared",
+    "internal",
+    "pkg",
+    "app",
+    "main",
+    "components",
+    "services",
+    "models",
+    "views",
+    "controllers",
 }
 
 
 def _get_igraph():
     try:
         import igraph
+
         return igraph
     except ImportError:
         logger.warning("python-igraph not installed; community detection disabled")
@@ -41,7 +59,8 @@ def _get_igraph():
 
 # ── Label heuristics ──────────────────────────────────────────
 
-def _heuristic_label_from_nodes(node_ids: List[str], graph: KnowledgeGraph) -> str:
+
+def _heuristic_label_from_nodes(node_ids: list[str], graph: KnowledgeGraph) -> str:
     """Generate a human-readable label for a community."""
     folder_counts: Counter = Counter()
     for nid in node_ids:
@@ -78,7 +97,7 @@ def _heuristic_label_from_nodes(node_ids: List[str], graph: KnowledgeGraph) -> s
     return ""
 
 
-def _calculate_cohesion(node_ids: List[str], graph: KnowledgeGraph) -> float:
+def _calculate_cohesion(node_ids: list[str], graph: KnowledgeGraph) -> float:
     """Internal edge ratio as a cohesion measure (0-1)."""
     id_set = set(node_ids[:50])  # sample up to 50 for performance
     total = internal = 0
@@ -92,6 +111,7 @@ def _calculate_cohesion(node_ids: List[str], graph: KnowledgeGraph) -> float:
 
 
 # ── Main algorithm ────────────────────────────────────────────
+
 
 def detect_communities(graph: KnowledgeGraph) -> CommunityDetectionResult:
     """Run Leiden community detection on the symbol graph.
@@ -107,16 +127,18 @@ def detect_communities(graph: KnowledgeGraph) -> CommunityDetectionResult:
     symbol_nodes = [n for n in graph.iter_nodes() if n.label in symbol_labels]
 
     if len(symbol_nodes) < 2:
-        return CommunityDetectionResult(stats={"total_communities": 0, "nodes_processed": len(symbol_nodes)})
+        return CommunityDetectionResult(
+            stats={"total_communities": 0, "nodes_processed": len(symbol_nodes)}
+        )
 
     is_large = len(symbol_nodes) > LARGE_GRAPH_THRESHOLD
     min_confidence = MIN_CONFIDENCE_LARGE if is_large else 0.0
 
     # Build node index
-    node_index: Dict[str, int] = {n.id: i for i, n in enumerate(symbol_nodes)}
+    node_index: dict[str, int] = {n.id: i for i, n in enumerate(symbol_nodes)}
 
     # Build edge list from CALLS/EXTENDS/IMPLEMENTS
-    edges: List[Tuple[int, int]] = []
+    edges: list[tuple[int, int]] = []
     seen_edges = set()
     for rel in graph.iter_relationships():
         if rel.type not in ("CALLS", "EXTENDS", "IMPLEMENTS"):
@@ -163,14 +185,14 @@ def detect_communities(graph: KnowledgeGraph) -> CommunityDetectionResult:
         return _single_community(symbol_nodes, graph)
 
     # Group nodes by community
-    community_groups: Dict[int, List[str]] = defaultdict(list)
-    for node, comm_id in zip(symbol_nodes, partition):
+    community_groups: dict[int, list[str]] = defaultdict(list)
+    for node, comm_id in zip(symbol_nodes, partition, strict=False):
         community_groups[comm_id].append(node.id)
 
     # Build results
-    communities: List[CommunityNode] = []
-    memberships: List[CommunityMembership] = []
-    comm_id_map: Dict[int, str] = {}
+    communities: list[CommunityNode] = []
+    memberships: list[CommunityMembership] = []
+    comm_id_map: dict[int, str] = {}
 
     for raw_id, node_ids in community_groups.items():
         if len(node_ids) < 2:
@@ -193,29 +215,35 @@ def detect_communities(graph: KnowledgeGraph) -> CommunityDetectionResult:
 
         # Add Community node to graph
         from .types import GraphNode, NodeProperties
-        graph.add_node(GraphNode(
-            id=f"Community:{comm_str_id}",
-            label="Community",
-            properties=NodeProperties(
-                name=label,
-                heuristic_label=label,
-                cohesion=cohesion,
-                symbol_count=len(node_ids),
-            ),
-        ))
+
+        graph.add_node(
+            GraphNode(
+                id=f"Community:{comm_str_id}",
+                label="Community",
+                properties=NodeProperties(
+                    name=label,
+                    heuristic_label=label,
+                    cohesion=cohesion,
+                    symbol_count=len(node_ids),
+                ),
+            )
+        )
 
         for nid in node_ids:
             memberships.append(CommunityMembership(node_id=nid, community_id=comm_str_id))
             # MEMBER_OF edge
             rel_id = f"MEMBER_OF:{nid}:{comm_str_id}"
             if not graph.get_relationship(rel_id):
-                graph.add_relationship(GraphRelationship(
-                    id=rel_id,
-                    source_id=nid,
-                    target_id=f"Community:{comm_str_id}",
-                    type="MEMBER_OF", confidence=1.0,
-                    reason="leiden_community",
-                ))
+                graph.add_relationship(
+                    GraphRelationship(
+                        id=rel_id,
+                        source_id=nid,
+                        target_id=f"Community:{comm_str_id}",
+                        type="MEMBER_OF",
+                        confidence=1.0,
+                        reason="leiden_community",
+                    )
+                )
 
     stats = {
         "total_communities": len(communities),
@@ -230,29 +258,41 @@ def detect_communities(graph: KnowledgeGraph) -> CommunityDetectionResult:
 def _single_community(symbol_nodes, graph: KnowledgeGraph) -> CommunityDetectionResult:
     """Fallback: put all nodes in one community."""
     from .types import GraphNode, NodeProperties
+
     node_ids = [n.id for n in symbol_nodes]
     comm_str_id = "comm_0"
     label = "All"
-    graph.add_node(GraphNode(
-        id=f"Community:{comm_str_id}",
-        label="Community",
-        properties=NodeProperties(name=label, symbol_count=len(node_ids)),
-    ))
+    graph.add_node(
+        GraphNode(
+            id=f"Community:{comm_str_id}",
+            label="Community",
+            properties=NodeProperties(name=label, symbol_count=len(node_ids)),
+        )
+    )
     memberships = []
     for nid in node_ids:
         memberships.append(CommunityMembership(node_id=nid, community_id=comm_str_id))
         rel_id = f"MEMBER_OF:{nid}:{comm_str_id}"
         if not graph.get_relationship(rel_id):
-            graph.add_relationship(GraphRelationship(
-                id=rel_id,
-                source_id=nid, target_id=f"Community:{comm_str_id}",
-                type="MEMBER_OF", confidence=1.0, reason="fallback",
-            ))
+            graph.add_relationship(
+                GraphRelationship(
+                    id=rel_id,
+                    source_id=nid,
+                    target_id=f"Community:{comm_str_id}",
+                    type="MEMBER_OF",
+                    confidence=1.0,
+                    reason="fallback",
+                )
+            )
     community = CommunityNode(
-        id=comm_str_id, label=label, heuristic_label=label,
-        cohesion=1.0, symbol_count=len(node_ids),
+        id=comm_str_id,
+        label=label,
+        heuristic_label=label,
+        cohesion=1.0,
+        symbol_count=len(node_ids),
     )
     return CommunityDetectionResult(
-        communities=[community], memberships=memberships,
+        communities=[community],
+        memberships=memberships,
         stats={"total_communities": 1, "nodes_processed": len(node_ids)},
     )
