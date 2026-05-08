@@ -852,16 +852,21 @@ async def get_neighborhood(symbol_id: str, hops: int = 2):
 _auto_index_path = os.environ.get("RAI_AUTO_INDEX")
 if _auto_index_path:
     @app.on_event("startup")
-    async def _auto_index():
-        logger.info(f"Auto-indexing: {_auto_index_path}")
-        import httpx
-        port = int(os.environ.get("RAI_PORT", "8360"))
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"http://127.0.0.1:{port}/index/directory",
-                json={"repo_path": _auto_index_path},
-                timeout=5.0,
-            )
+    async def _auto_index() -> None:
+        """Kick off indexing in-process at server startup.
+
+        We deliberately avoid HTTP-roundtripping to ourselves here: at the time
+        the `startup` event fires, uvicorn has not yet bound the listening
+        socket, so an outbound httpx.AsyncClient call to 127.0.0.1 races
+        against the server coming up and reliably fails on Windows. Calling
+        the route function directly spawns the same background thread and
+        returns instantly.
+        """
+        logger.info("Auto-indexing: %s", _auto_index_path)
+        try:
+            await index_directory(IndexDirectoryRequest(repo_path=_auto_index_path))
+        except Exception as e:  # noqa: BLE001 — startup must never crash here
+            logger.error("Auto-index failed: %s", e)
 
 
 # ──────────────────────────────────────────────
