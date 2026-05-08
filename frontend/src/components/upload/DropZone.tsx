@@ -8,8 +8,6 @@ import { uploadDirectory, connectProgressWS } from "../../api/client";
 
 export default function DropZone() {
   const [isDragging, setIsDragging] = useState(false);
-  const showUploadZone = useStore((s) => s.showUploadZone);
-  const setShowUploadZone = useStore((s) => s.setShowUploadZone);
   const setIsUploading = useStore((s) => s.setIsUploading);
   const setUploadProgress = useStore((s) => s.setUploadProgress);
   const addActivity = useStore((s) => s.addActivity);
@@ -53,7 +51,6 @@ export default function DropZone() {
 
   const startUpload = useCallback(async (files: FileList | File[]) => {
     setIsUploading(true);
-    setShowUploadZone(false);
     addActivity(`Uploading ${files.length} files...`);
     setIndexStatus("building");
 
@@ -61,33 +58,28 @@ export default function DropZone() {
       const { upload_id } = await uploadDirectory(files);
       addActivity(`Upload started: ${upload_id}`);
 
-      // Connect WebSocket for live progress
-      connectProgressWS(
-        upload_id,
-        (data) => {
-          setUploadProgress(data);
-          if (data.stage === "complete") {
-            setIsUploading(false);
-            setIndexStatus("ready", data);
-            addActivity("Repository indexed successfully!");
-            setTimeout(() => setUploadProgress(null), 4000);
-          } else if (data.stage === "error") {
-            setIsUploading(false);
-            setIndexStatus("error");
-            addActivity(`Indexing error: ${data.errors?.join(", ")}`);
-            setTimeout(() => setUploadProgress(null), 5000);
-          }
-        },
-        () => {
-          // WebSocket closed, poll progress
-        },
-      );
-    } catch (err: any) {
+      // Live progress feed via WebSocket.
+      connectProgressWS(upload_id, (data) => {
+        setUploadProgress(data);
+        if (data.stage === "complete") {
+          setIsUploading(false);
+          setIndexStatus("ready", { ...data });
+          addActivity("Repository indexed successfully!");
+          setTimeout(() => setUploadProgress(null), 4000);
+        } else if (data.stage === "error") {
+          setIsUploading(false);
+          setIndexStatus("error");
+          addActivity(`Indexing error: ${data.errors?.join(", ")}`);
+          setTimeout(() => setUploadProgress(null), 5000);
+        }
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       setIsUploading(false);
       setIndexStatus("error");
-      addActivity(`Upload failed: ${err.message}`);
+      addActivity(`Upload failed: ${message}`);
     }
-  }, []);
+  }, [addActivity, setIndexStatus, setIsUploading, setUploadProgress]);
 
   const handleBrowseClick = () => {
     const input = document.createElement("input");

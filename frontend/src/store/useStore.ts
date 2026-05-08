@@ -1,5 +1,5 @@
 /**
- * Zustand store – global state for Contextual Neural Code Nexus
+ * Zustand store — global state for the Repo-Aware AI web app.
  */
 import { create } from "zustand";
 
@@ -24,18 +24,24 @@ export interface UploadProgress {
   elapsed_seconds: number;
 }
 
+export type BackendStatus = "connecting" | "online" | "offline";
+export type IndexStatus = "none" | "building" | "ready" | "error";
+export type ActiveView = "chat" | "repomap";
+
 interface AppState {
   // Connection
-  backendStatus: "connecting" | "online" | "offline";
-  setBackendStatus: (s: AppState["backendStatus"]) => void;
+  backendStatus: BackendStatus;
+  setBackendStatus: (s: BackendStatus) => void;
+
+  // Backend metadata (from /health)
+  model: string;
+  embeddingModel: string;
+  setBackendInfo: (model: string, embeddingModel: string) => void;
 
   // Index
-  indexStatus: "none" | "building" | "ready" | "error";
+  indexStatus: IndexStatus;
   indexInfo: Record<string, unknown>;
-  setIndexStatus: (
-    s: AppState["indexStatus"],
-    info?: Record<string, unknown>,
-  ) => void;
+  setIndexStatus: (s: IndexStatus, info?: Record<string, unknown>) => void;
 
   // Chat
   messages: ChatMessage[];
@@ -47,28 +53,24 @@ interface AppState {
   // Upload
   uploadProgress: UploadProgress | null;
   isUploading: boolean;
-  showUploadZone: boolean;
   setUploadProgress: (p: UploadProgress | null) => void;
   setIsUploading: (v: boolean) => void;
-  setShowUploadZone: (v: boolean) => void;
 
   // UI
-  showRepoExplorer: boolean;
   showActivityFeed: boolean;
   isBooting: boolean;
   errorShake: boolean;
-  toggleRepoExplorer: () => void;
   toggleActivityFeed: () => void;
   setIsBooting: (v: boolean) => void;
   triggerErrorShake: () => void;
 
-  // Activity log
+  // Activity log (capped to 100 entries)
   activityLog: string[];
   addActivity: (msg: string) => void;
 
   // View toggle
-  activeView: "chat" | "repomap";
-  setActiveView: (v: "chat" | "repomap") => void;
+  activeView: ActiveView;
+  setActiveView: (v: ActiveView) => void;
 
   // Repo map selection
   selectedCommunity: string | null;
@@ -78,38 +80,32 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set) => ({
-  // Connection
   backendStatus: "connecting",
   setBackendStatus: (backendStatus) => set({ backendStatus }),
 
-  // Index
+  model: "",
+  embeddingModel: "",
+  setBackendInfo: (model, embeddingModel) => set({ model, embeddingModel }),
+
   indexStatus: "none",
   indexInfo: {},
   setIndexStatus: (indexStatus, indexInfo) =>
-    set({ indexStatus, ...(indexInfo ? { indexInfo } : {}) }),
+    set(indexInfo ? { indexStatus, indexInfo } : { indexStatus }),
 
-  // Chat
   messages: [],
   isQuerying: false,
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
   clearMessages: () => set({ messages: [] }),
   setIsQuerying: (isQuerying) => set({ isQuerying }),
 
-  // Upload
   uploadProgress: null,
   isUploading: false,
-  showUploadZone: false,
   setUploadProgress: (uploadProgress) => set({ uploadProgress }),
   setIsUploading: (isUploading) => set({ isUploading }),
-  setShowUploadZone: (showUploadZone) => set({ showUploadZone }),
 
-  // UI
-  showRepoExplorer: false,
   showActivityFeed: true,
   isBooting: true,
   errorShake: false,
-  toggleRepoExplorer: () =>
-    set((s) => ({ showRepoExplorer: !s.showRepoExplorer })),
   toggleActivityFeed: () =>
     set((s) => ({ showActivityFeed: !s.showActivityFeed })),
   setIsBooting: (isBooting) => set({ isBooting }),
@@ -118,7 +114,6 @@ export const useStore = create<AppState>((set) => ({
     setTimeout(() => set({ errorShake: false }), 300);
   },
 
-  // Activity log
   activityLog: [],
   addActivity: (msg) =>
     set((s) => ({
@@ -128,11 +123,9 @@ export const useStore = create<AppState>((set) => ({
       ].slice(0, 100),
     })),
 
-  // View toggle
   activeView: "chat",
   setActiveView: (activeView) => set({ activeView }),
 
-  // Repo map selection
   selectedCommunity: null,
   selectedSymbol: null,
   setSelectedCommunity: (selectedCommunity) => set({ selectedCommunity }),

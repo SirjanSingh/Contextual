@@ -5,11 +5,21 @@ import { useEffect, useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { useStore } from "../../store/useStore";
 
+/** Strip the `models/` prefix and render in the visual language of the HUD. */
+function formatModelLabel(model: string): string {
+  if (!model) return "GEMINI";
+  return model
+    .replace(/^models\//, "")
+    .replace(/-/g, " ")
+    .toUpperCase();
+}
+
 export default function Header() {
   const backendStatus = useStore((s) => s.backendStatus);
   const indexStatus = useStore((s) => s.indexStatus);
   const activeView = useStore((s) => s.activeView);
   const setActiveView = useStore((s) => s.setActiveView);
+  const model = useStore((s) => s.model);
   const [time, setTime] = useState("");
 
   useEffect(() => {
@@ -188,8 +198,9 @@ export default function Header() {
           <span>{indexStatus.toUpperCase()}</span>
         </div>
 
-        {/* Model badge */}
+        {/* Model badge — driven by /health */}
         <div
+          title={model || "Model unknown"}
           style={{
             padding: "3px 10px",
             border: "1px solid var(--neural-purple-dim)",
@@ -197,9 +208,13 @@ export default function Header() {
             color: "var(--neural-purple)",
             fontSize: "10px",
             letterSpacing: "1px",
+            maxWidth: 200,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}
         >
-          GEMINI 2.0
+          {formatModelLabel(model)}
         </div>
       </motion.div>
     </header>

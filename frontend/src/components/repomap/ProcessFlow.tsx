@@ -1,51 +1,75 @@
 /**
  * ProcessFlow — List and detail view for detected execution processes.
  */
-import { useState, useEffect } from "react";
-import { getProcessDetail } from "../../api/client";
+import { useEffect, useState } from "react";
+import {
+  getProcessDetail,
+  ProcessDetail as ProcessDetailType,
+  RepoMapCommunity,
+  RepoMapProcess,
+} from "../../api/client";
 
 const COMMUNITY_COLOURS = [
   "#00d4ff", "#7c3aed", "#10b981", "#f59e0b", "#ef4444",
   "#ec4899", "#3b82f6", "#14b8a6", "#f97316", "#8b5cf6",
 ];
 
-function commColour(commId: string, communities: any[]): string {
+function commColour(
+  commId: string | undefined,
+  communities: RepoMapCommunity[],
+): string {
+  if (!commId) return "#4b5563";
   const idx = communities.findIndex((c) => c.id === commId);
-  return COMMUNITY_COLOURS[idx % COMMUNITY_COLOURS.length] ?? "#4b5563";
-}
-
-interface Process {
-  id: string;
-  label: string;
-  process_type: string;
-  step_count: number;
-  communities: string[];
+  return idx < 0 ? "#4b5563" : COMMUNITY_COLOURS[idx % COMMUNITY_COLOURS.length];
 }
 
 interface ProcessFlowProps {
-  processes: Process[];
-  communities: any[];
+  processes: RepoMapProcess[];
+  communities: RepoMapCommunity[];
 }
 
-function ProcessDetail({ processId, communities }: { processId: string; communities: any[] }) {
-  const [detail, setDetail] = useState<any>(null);
-  const [loaded, setLoaded] = useState(false);
+function ProcessDetail({
+  processId,
+  communities,
+}: {
+  processId: string;
+  communities: RepoMapCommunity[];
+}) {
+  const [detail, setDetail] = useState<ProcessDetailType | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    setError(null);
     getProcessDetail(processId)
-      .then(setDetail)
-      .catch(() => null)
-      .finally(() => setLoaded(true));
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [processId]);
 
-  if (!detail) return (
-    <div style={{ color: "#9ca3af", fontSize: 11, padding: "8px 0" }}>Loading…</div>
-  );
+  if (error) {
+    return (
+      <div style={{ color: "#f87171", fontSize: 11, padding: "8px 0" }}>
+        Failed to load: {error}
+      </div>
+    );
+  }
+  if (!detail) {
+    return (
+      <div style={{ color: "#9ca3af", fontSize: 11, padding: "8px 0" }}>Loading…</div>
+    );
+  }
 
   return (
     <div style={{ marginTop: 10 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center", overflowX: "auto", paddingBottom: 6 }}>
-        {detail.steps.map((s: any, i: number) => {
+        {detail.steps.map((s, i) => {
           const stepComm = detail.communities?.[0];
           const colour = commColour(stepComm, communities);
           return (

@@ -21,52 +21,69 @@ export default function App() {
   const setIsBooting = useStore((s) => s.setIsBooting);
   const errorShake = useStore((s) => s.errorShake);
   const setBackendStatus = useStore((s) => s.setBackendStatus);
+  const setBackendInfo = useStore((s) => s.setBackendInfo);
   const setIndexStatus = useStore((s) => s.setIndexStatus);
   const addActivity = useStore((s) => s.addActivity);
   const showActivityFeed = useStore((s) => s.showActivityFeed);
   const activeView = useStore((s) => s.activeView);
 
-  // Health check on mount
+  // Health + index status check, retried until the backend responds.
   useEffect(() => {
-    let running = true;
-    const check = async () => {
+    let cancelled = false;
+    let attempts = 0;
+
+    const isIndexStatus = (
+      v: unknown,
+    ): v is "none" | "building" | "ready" | "error" =>
+      v === "none" || v === "building" || v === "ready" || v === "error";
+
+    const probe = async () => {
       try {
         const health = await getHealth();
-        if (!running) return;
+        if (cancelled) return;
         if (health.status === "ok") {
           setBackendStatus("online");
+          setBackendInfo(health.model || "", health.embedding_model || "");
           addActivity("Backend connection established");
-          addActivity(`Model: ${health.model}`);
+          if (health.model) addActivity(`Model: ${health.model}`);
         } else {
           setBackendStatus("offline");
         }
       } catch {
-        if (running) setBackendStatus("offline");
+        if (cancelled) return;
+        setBackendStatus("offline");
+        // Retry with backoff up to ~30s before giving up silently.
+        if (attempts < 6) {
+          attempts += 1;
+          setTimeout(probe, Math.min(1000 * 2 ** attempts, 8000));
+          return;
+        }
       }
 
       try {
         const idx = await getIndexStatus();
-        if (!running) return;
-        setIndexStatus(idx.status as any, idx.info);
-        if (idx.status === "ready") {
-          addActivity("Index loaded — ready for queries");
+        if (cancelled) return;
+        if (isIndexStatus(idx.status)) {
+          setIndexStatus(idx.status, idx.info);
+          if (idx.status === "ready") {
+            addActivity("Index loaded — ready for queries");
+          }
         }
       } catch {
-        // ignore
+        // status endpoint not yet up; non-fatal
       }
     };
 
-    // Check after boot
-    const timeout = setTimeout(check, 3500);
+    const timeout = setTimeout(probe, 3500);
     return () => {
-      running = false;
+      cancelled = true;
       clearTimeout(timeout);
     };
-  }, []);
+  }, [addActivity, setBackendInfo, setBackendStatus, setIndexStatus]);
 
   const handleBootComplete = useCallback(() => {
     setIsBooting(false);
-  }, []);
+  }, [setIsBooting]);
 
   return (
     <>

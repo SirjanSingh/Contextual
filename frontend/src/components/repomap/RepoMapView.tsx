@@ -3,10 +3,13 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
-  getRepoMap,
+  CommunityDetail as CommunityDetailType,
   getCommunityDetail,
+  getRepoMap,
   getSymbolDetail,
+  RepoMapCommunity,
   RepoMapSummary,
+  SymbolDetail as SymbolDetailType,
 } from "../../api/client";
 import { useStore } from "../../store/useStore";
 import ProcessFlow from "./ProcessFlow";
@@ -17,30 +20,47 @@ const PALETTE = [
   "#34d399", "#fbbf24", "#60a5fa", "#f472b6", "#a78bfa",
 ];
 
-function colorForIdx(i: number) {
+function colorForIdx(i: number): string {
   return PALETTE[i % PALETTE.length];
 }
-function colorForCommunity(id: string | null | undefined, communities: any[]) {
+function colorForCommunity(
+  id: string | null | undefined,
+  communities: RepoMapCommunity[],
+): string {
   const i = communities.findIndex((c) => c.id === id);
   return i >= 0 ? colorForIdx(i) : "#4b5563";
 }
 
 // ── Symbol detail ──────────────────────────────────────────────
 
-function SymbolDetail({ symbolId, communities, onClose }: {
+interface SymbolDetailProps {
   symbolId: string;
-  communities: any[];
+  communities: RepoMapCommunity[];
   onClose: () => void;
-}) {
-  const [detail, setDetail] = useState<any>(null);
+}
+
+function SymbolDetail({ symbolId, communities, onClose }: SymbolDetailProps) {
+  const [detail, setDetail] = useState<SymbolDetailType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
+    setError(null);
     getSymbolDetail(symbolId)
-      .then(setDetail)
-      .catch(() => null)
-      .finally(() => setLoading(false));
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [symbolId]);
 
   return (
@@ -49,41 +69,47 @@ function SymbolDetail({ symbolId, communities, onClose }: {
         <span style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 1 }}>SYMBOL</span>
         <button onClick={onClose} style={closeBtnStyle}>✕</button>
       </div>
-      {loading && <div style={dimText}>Loading…</div>}
-      {detail && (
+      {loading && <DetailSkeleton />}
+      {error && !loading && (
+        <div style={{ ...dimText, color: "#f87171" }}>Failed to load: {error}</div>
+      )}
+      {detail && !loading && (
         <>
           <div style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
             {detail.name}
           </div>
           <div style={{ color: "#9ca3af", fontSize: 10, marginBottom: 4 }}>
-            {detail.label} · {detail.is_exported ? "exported" : "internal"}
+            {detail.label}
           </div>
           <div style={{ color: "#9ca3af", fontSize: 10, marginBottom: 10, wordBreak: "break-all" }}>
             {detail.file_path}:{detail.start_line}
           </div>
-          {detail.community_id && (
+          {detail.community && (
             <div style={{ marginBottom: 10 }}>
               <div style={sectionLabel}>COMMUNITY</div>
-              <span style={{
-                color: colorForCommunity(detail.community_id, communities),
-                fontSize: 11,
-              }}>
-                {communities.find((c) => c.id === detail.community_id)?.heuristic_label ?? detail.community_id}
+              <span
+                style={{
+                  color: colorForCommunity(detail.community, communities),
+                  fontSize: 11,
+                }}
+              >
+                {communities.find((c) => c.id === detail.community)?.heuristic_label ??
+                  detail.community}
               </span>
             </div>
           )}
-          {detail.callees?.length > 0 && (
+          {detail.callees && detail.callees.length > 0 && (
             <div style={{ marginBottom: 8 }}>
               <div style={sectionLabel}>CALLS ({detail.callees.length})</div>
-              {detail.callees.slice(0, 10).map((c: any) => (
+              {detail.callees.slice(0, 10).map((c) => (
                 <div key={c.id} style={relItemStyle("#10b981")}>→ {c.name}</div>
               ))}
             </div>
           )}
-          {detail.callers?.length > 0 && (
+          {detail.callers && detail.callers.length > 0 && (
             <div>
               <div style={sectionLabel}>CALLED BY ({detail.callers.length})</div>
-              {detail.callers.slice(0, 10).map((c: any) => (
+              {detail.callers.slice(0, 10).map((c) => (
                 <div key={c.id} style={relItemStyle("#f59e0b")}>← {c.name}</div>
               ))}
             </div>
@@ -96,22 +122,41 @@ function SymbolDetail({ symbolId, communities, onClose }: {
 
 // ── Community detail ───────────────────────────────────────────
 
-function CommunityDetail({ communityId, communities, onClose, onSymbolClick }: {
+interface CommunityDetailProps {
   communityId: string;
-  communities: any[];
+  communities: RepoMapCommunity[];
   onClose: () => void;
   onSymbolClick: (id: string) => void;
-}) {
-  const [detail, setDetail] = useState<any>(null);
+}
+
+function CommunityDetail({
+  communityId,
+  communities,
+  onClose,
+  onSymbolClick,
+}: CommunityDetailProps) {
+  const [detail, setDetail] = useState<CommunityDetailType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const colour = colorForCommunity(communityId, communities);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
+    setError(null);
     getCommunityDetail(communityId)
-      .then(setDetail)
-      .catch(() => null)
-      .finally(() => setLoading(false));
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [communityId]);
 
   return (
@@ -123,11 +168,14 @@ function CommunityDetail({ communityId, communities, onClose, onSymbolClick }: {
         </div>
         <button onClick={onClose} style={closeBtnStyle}>✕</button>
       </div>
-      {loading && <div style={dimText}>Loading…</div>}
-      {detail && (
+      {loading && <DetailSkeleton />}
+      {error && !loading && (
+        <div style={{ ...dimText, color: "#f87171" }}>Failed to load: {error}</div>
+      )}
+      {detail && !loading && (
         <>
           <div style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
-            {detail.heuristic_label || detail.label}
+            {detail.label}
           </div>
           <div style={{ display: "flex", gap: 16, marginBottom: 10 }}>
             <Stat label="Symbols" value={detail.symbol_count} />
@@ -136,7 +184,7 @@ function CommunityDetail({ communityId, communities, onClose, onSymbolClick }: {
           </div>
           <div style={sectionLabel}>MEMBERS</div>
           <div style={{ maxHeight: 220, overflowY: "auto" }}>
-            {detail.members?.slice(0, 40).map((m: any) => (
+            {detail.members?.slice(0, 40).map((m) => (
               <div
                 key={m.id}
                 onClick={() => onSymbolClick(m.id)}
@@ -169,13 +217,42 @@ function CommunityDetail({ communityId, communities, onClose, onSymbolClick }: {
   );
 }
 
-function Stat({ label, value }: { label: string; value: any }) {
+function Stat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ color: "#00d4ff", fontSize: 14, fontWeight: 700 }}>{value}</div>
       <div style={{ color: "#9ca3af", fontSize: 9, letterSpacing: 0.5 }}>{label}</div>
     </div>
   );
+}
+
+/** Three-bar shimmer placeholder shown while a detail panel is loading. */
+function DetailSkeleton() {
+  return (
+    <div aria-hidden style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={skeletonBar(40)} />
+      <div style={skeletonBar(70)} />
+      <div style={skeletonBar(55)} />
+    </div>
+  );
+}
+
+function skeletonBar(widthPct: number): React.CSSProperties {
+  return {
+    width: `${widthPct}%`,
+    height: 10,
+    borderRadius: 4,
+    background:
+      "linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(0,212,255,0.10) 50%, rgba(255,255,255,0.04) 100%)",
+    backgroundSize: "200% 100%",
+    animation: "skeleton-shimmer 1.4s linear infinite",
+  };
 }
 
 // ── Force Graph Canvas ─────────────────────────────────────────
@@ -485,7 +562,7 @@ export default function RepoMapView() {
 
   const communities = data?.communities ?? [];
   const processes = data?.processes ?? [];
-  const stats = data?.stats as any;
+  const stats = data?.stats;
 
   const filteredCommunities = communities.filter((c) =>
     !search || (c.heuristic_label || c.label).toLowerCase().includes(search.toLowerCase())

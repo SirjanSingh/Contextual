@@ -17,15 +17,12 @@
     "three": "^0.160.0",
     "framer-motion": "^10.18.0",
     "gsap": "^3.12.4",
-    "zustand": "^4.4.7",
-    "react-syntax-highlighter": "^15.5.0",
-    "react-markdown": "^9.0.1"
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.0",
     "@types/three": "^0.160.0",
-    "@types/react-syntax-highlighter": "^15.5.11",
     "@vitejs/plugin-react": "^4.2.1",
     "typescript": "^5.3.3",
     "vite": "^5.4.2",
