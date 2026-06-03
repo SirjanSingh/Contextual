@@ -57,12 +57,23 @@ def main():
     if args.repo:
         os.environ["RAI_AUTO_INDEX"] = str(Path(args.repo).resolve())
 
-    # Verify API key
+    # Verify credentials: Vertex AI (project) OR Gemini API key.
     api_key = os.environ.get("GOOGLE_API_KEY", "")
-    if not api_key:
-        print("[dev] ERROR: GOOGLE_API_KEY not set. Create a .env file with:")
-        print("        GOOGLE_API_KEY=your_key_here")
+    vertex_project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+    vertex_token = os.environ.get("VERTEX_ACCESS_TOKEN", "")
+    use_vertex = bool(vertex_project or vertex_token)
+
+    if not use_vertex and not api_key:
+        print("[dev] ERROR: no credentials found. Set one of:")
+        print("        GOOGLE_API_KEY=your_key_here            (Gemini API mode)")
+        print("        GOOGLE_CLOUD_PROJECT=your-gcp-project   (Vertex AI mode)")
         sys.exit(1)
+
+    if use_vertex:
+        auth = "access token" if vertex_token else "ADC"
+        cred_line = f"Vertex AI : {vertex_project} ({auth})"
+    else:
+        cred_line = f"API Key   : {api_key[:8]}...{api_key[-4:]}"
 
     print(f"""
 ╔══════════════════════════════════════════════════╗
@@ -70,7 +81,7 @@ def main():
 ╠══════════════════════════════════════════════════╣
 ║  Dashboard : http://{args.host}:{args.port}/dev/             ║
 ║  Health    : http://{args.host}:{args.port}/health            ║
-║  API Key   : {api_key[:8]}...{api_key[-4:]}                  ║
+║  {cred_line:<46s}║
 ║  Data Dir  : {args.data_dir:<35s}║
 ║  Reload    : {"ON" if not args.no_reload else "OFF"}                                ║
 ╚══════════════════════════════════════════════════╝
