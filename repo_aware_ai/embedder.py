@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ._retry import gemini_retry
-from .config import get_config
+from .config import get_config, make_genai_client
 
 logger = logging.getLogger("rai.embedder")
 
@@ -39,7 +39,6 @@ class Embedder:
 
     def __post_init__(self) -> None:
         try:
-            from google import genai
             from google.genai import types
         except ImportError as e:
             raise ImportError(
@@ -56,7 +55,7 @@ class Embedder:
         else:
             self._dim = _MODEL_DIMS.get(self.model_name.split("/")[-1], _DEFAULT_DIM)
 
-        self._client = genai.Client(api_key=config.google_api_key)
+        self._client = make_genai_client(config)
         self._types = types
 
     @gemini_retry
