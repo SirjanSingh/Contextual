@@ -212,12 +212,11 @@ async function _promptApiKey(
   if (!key) {
     return undefined;
   }
+  // Store ONLY in SecretStorage. We deliberately do NOT mirror into
+  // settings.json — that would leak the key into settings exports / Settings
+  // Sync, which the configuration description explicitly promises against.
+  // `loadApiKey()` reads SecretStorage as its fallback, so this is sufficient.
   await context.secrets.store("googleApiKey", key);
-  // Mirror into settings so backendClient/loadApiKey paths agree, but only at
-  // the User scope so we never leak into a workspace's settings.json.
-  await vscode.workspace
-    .getConfiguration("repoAwareAI")
-    .update("googleApiKey", key, vscode.ConfigurationTarget.Global);
   return key;
 }
 
