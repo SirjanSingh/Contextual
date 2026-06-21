@@ -46,12 +46,16 @@ try:
         wait_exponential,
     )
 
-    _MAX_ATTEMPTS = int(os.environ.get("RAI_GEMINI_MAX_RETRIES", "4"))
+    # Defaults are tuned so the cumulative backoff crosses the 60s window that
+    # Vertex per-minute token quotas reset on (so a saturated embedding quota
+    # clears on its own instead of surfacing as a hard error). Override via env.
+    _MAX_ATTEMPTS = int(os.environ.get("RAI_GEMINI_MAX_RETRIES", "6"))
+    _MAX_WAIT = int(os.environ.get("RAI_GEMINI_MAX_WAIT", "30"))
 
     gemini_retry: Callable[[F], F] = retry(  # type: ignore[assignment]
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(_MAX_ATTEMPTS),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        wait=wait_exponential(multiplier=1, min=1, max=_MAX_WAIT),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
     )

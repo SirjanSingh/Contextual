@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 
@@ -19,6 +20,7 @@ logger = logging.getLogger("rai.embedder")
 # native dims by default for best quality.
 _MODEL_DIMS = {
     "gemini-embedding-001": 768,
+    "text-embedding-005": 768,
     "text-embedding-004": 768,
     "models/embedding-001": 768,
 }
@@ -75,7 +77,13 @@ class Embedder:
         if not texts:
             return np.empty((0, self._dim), dtype=np.float32)
 
-        batch_size = min(batch_size, 100)  # API hard limit
+        # Keep batches small: Vertex text-embedding-* models cap a single
+        # request at 20k input tokens, and new-project quotas are tight. At the
+        # default ~1800-char chunk size, 20 chunks stays well under the cap.
+        # Both are env-tunable.
+        batch_cap = int(os.environ.get("RAI_EMBED_BATCH_SIZE", "20"))
+        pause = float(os.environ.get("RAI_EMBED_BATCH_PAUSE", "0.5"))
+        batch_size = min(batch_size, batch_cap, 100)  # API hard limit
         all_embeddings: list[list[float]] = []
 
         logger.info(
@@ -87,7 +95,7 @@ class Embedder:
             batch = texts[i : i + batch_size]
             all_embeddings.extend(self._embed_batch(batch, "RETRIEVAL_DOCUMENT"))
             if i + batch_size < len(texts):
-                time.sleep(0.1)  # gentle pacing
+                time.sleep(pause)  # gentle pacing to respect TPM quota
 
         embeddings = np.asarray(all_embeddings, dtype=np.float32)
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
