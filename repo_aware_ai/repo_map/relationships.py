@@ -4,31 +4,41 @@ Builds IMPORTS, CALLS, EXTENDS, HAS_METHOD relationships between symbols.
 Ported from GitNexus import-processor.ts, call-processor.ts,
 heritage-processor.ts, structure-processor.ts.
 """
+
 from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from pathlib import PurePosixPath
-from typing import Dict, List, Optional, Set, Tuple
 
 from ..loader import RepoFile
-from .types import GraphRelationship
 from .graph import KnowledgeGraph
-from .parsing import SymbolTable, ImportMap, _detect_language, _get_parser, _node_id, _rel_id
+from .parsing import ImportMap, SymbolTable, _detect_language, _get_parser, _rel_id
+from .types import GraphRelationship
 
 logger = logging.getLogger("rai.repo_map.relationships")
 
 
 # ── Import resolution helpers ─────────────────────────────────
 
-def _build_file_set(files: List[RepoFile]) -> Set[str]:
+
+def _build_file_set(files: list[RepoFile]) -> set[str]:
     return {f.path for f in files}
 
 
-def _try_extensions(base: str, file_set: Set[str]) -> Optional[str]:
+def _try_extensions(base: str, file_set: set[str]) -> str | None:
     """Try resolving a base path with common extensions."""
-    for ext in (".py", "/__init__.py", ".ts", ".tsx", ".js", ".jsx",
-                "/index.ts", "/index.tsx", "/index.js", "/index.jsx"):
+    for ext in (
+        ".py",
+        "/__init__.py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        "/index.ts",
+        "/index.tsx",
+        "/index.js",
+        "/index.jsx",
+    ):
         candidate = base + ext
         if candidate in file_set:
             return candidate
@@ -37,7 +47,7 @@ def _try_extensions(base: str, file_set: Set[str]) -> Optional[str]:
     return None
 
 
-def _resolve_python_import(import_path: str, current_file: str, file_set: Set[str]) -> Optional[str]:
+def _resolve_python_import(import_path: str, current_file: str, file_set: set[str]) -> str | None:
     """Resolve a Python import path to a file in the repo."""
     # Relative import (PEP 328)
     if import_path.startswith("."):
@@ -72,7 +82,7 @@ def _resolve_python_import(import_path: str, current_file: str, file_set: Set[st
     return None
 
 
-def _resolve_js_import(import_path: str, current_file: str, file_set: Set[str]) -> Optional[str]:
+def _resolve_js_import(import_path: str, current_file: str, file_set: set[str]) -> str | None:
     """Resolve a JS/TS import path to a file in the repo."""
     if not import_path.startswith("."):
         # Bare import — try suffix matching
@@ -82,8 +92,9 @@ def _resolve_js_import(import_path: str, current_file: str, file_set: Set[str]) 
             for ext in (".ts", ".tsx", ".js", ".jsx"):
                 if fp_norm.endswith("/".join(parts) + ext):
                     return fp
-            if fp_norm.endswith("/".join(parts) + "/index.ts") or \
-               fp_norm.endswith("/".join(parts) + "/index.js"):
+            if fp_norm.endswith("/".join(parts) + "/index.ts") or fp_norm.endswith(
+                "/".join(parts) + "/index.js"
+            ):
                 return fp
         return None
 
@@ -103,7 +114,8 @@ def _resolve_js_import(import_path: str, current_file: str, file_set: Set[str]) 
 
 # ── 1. Import relationships ───────────────────────────────────
 
-def _extract_python_imports(tree, file_path: str) -> List[str]:
+
+def _extract_python_imports(tree, file_path: str) -> list[str]:
     """Extract import paths from a Python AST."""
     imports = []
 
@@ -128,7 +140,7 @@ def _extract_python_imports(tree, file_path: str) -> List[str]:
     return imports
 
 
-def _extract_js_imports(tree, file_path: str) -> List[str]:
+def _extract_js_imports(tree, file_path: str) -> list[str]:
     """Extract import sources from a JS/TS AST."""
     imports = []
 
@@ -152,7 +164,7 @@ def _extract_js_imports(tree, file_path: str) -> List[str]:
 
 def build_import_relationships(
     graph: KnowledgeGraph,
-    files: List[RepoFile],
+    files: list[RepoFile],
     symbol_table: SymbolTable,
 ) -> ImportMap:
     """Parse imports and create IMPORTS edges. Returns ImportMap."""
@@ -191,12 +203,16 @@ def build_import_relationships(
                 rel_id = _rel_id("IMPORTS", src_id, tgt_id)
                 if not graph.get_relationship(rel_id):
                     rel_counter += 1
-                    graph.add_relationship(GraphRelationship(
-                        id=rel_id,
-                        source_id=src_id, target_id=tgt_id,
-                        type="IMPORTS", confidence=1.0,
-                        reason="file_import",
-                    ))
+                    graph.add_relationship(
+                        GraphRelationship(
+                            id=rel_id,
+                            source_id=src_id,
+                            target_id=tgt_id,
+                            type="IMPORTS",
+                            confidence=1.0,
+                            reason="file_import",
+                        )
+                    )
 
     logger.info(f"[relationships] import edges={rel_counter}")
     return dict(import_map)
@@ -204,7 +220,8 @@ def build_import_relationships(
 
 # ── 2. Call relationships ─────────────────────────────────────
 
-def _collect_calls(node, calls: List[str]) -> None:
+
+def _collect_calls(node, calls: list[str]) -> None:
     """Collect all call targets from an AST node."""
     if node.type == "call":
         # Python: call.function
@@ -236,10 +253,11 @@ def _collect_calls(node, calls: List[str]) -> None:
 
 
 def _resolve_call(
-    call_name: str, from_file: str,
+    call_name: str,
+    from_file: str,
     symbol_table: SymbolTable,
     import_map: ImportMap,
-) -> Tuple[Optional[str], float]:
+) -> tuple[str | None, float]:
     """Resolve a function call name to a node_id with confidence score.
 
     Returns (node_id, confidence) or (None, 0).
@@ -270,7 +288,7 @@ def _resolve_call(
 
 def build_call_relationships(
     graph: KnowledgeGraph,
-    files: List[RepoFile],
+    files: list[RepoFile],
     symbol_table: SymbolTable,
     import_map: ImportMap,
 ) -> None:
@@ -292,11 +310,7 @@ def build_call_relationships(
             continue
 
         # Find all callable symbols in this file
-        file_symbols = {
-            name: nid
-            for (fp, name), nid in symbol_table.items()
-            if fp == f.path
-        }
+        file_symbols = {name: nid for (fp, name), nid in symbol_table.items() if fp == f.path}
 
         if not file_symbols:
             continue
@@ -304,8 +318,13 @@ def build_call_relationships(
         # For each symbol, collect calls within its subtree
         # We do a single full-file pass and attribute calls to the enclosing function
         _extract_file_calls(
-            tree.root_node, f.path, lang, graph, symbol_table,
-            import_map, rel_counter,
+            tree.root_node,
+            f.path,
+            lang,
+            graph,
+            symbol_table,
+            import_map,
+            rel_counter,
         )
         # rel_counter is updated inside, but Python ints are immutable; use list
     # Re-run with mutable counter
@@ -319,7 +338,9 @@ def build_call_relationships(
             continue
         try:
             tree = parser.parse(f.text.encode("utf-8"))
-            _extract_file_calls_v2(tree.root_node, f.path, lang, graph, symbol_table, import_map, _rel_count)
+            _extract_file_calls_v2(
+                tree.root_node, f.path, lang, graph, symbol_table, import_map, _rel_count
+            )
         except Exception:
             continue
 
@@ -327,18 +348,22 @@ def build_call_relationships(
 
 
 def _extract_file_calls_v2(
-    root, file_path: str, language: str,
-    graph: KnowledgeGraph, symbol_table: SymbolTable,
-    import_map: ImportMap, counter: List[int],
+    root,
+    file_path: str,
+    language: str,
+    graph: KnowledgeGraph,
+    symbol_table: SymbolTable,
+    import_map: ImportMap,
+    counter: list[int],
 ) -> None:
     """Walk AST, find enclosing function context, extract and record calls."""
 
-    def get_current_symbol(node) -> Optional[str]:
+    def get_current_symbol(node) -> str | None:
         """Find the nearest enclosing function/method symbol for a node."""
         # Walk up via parent chain isn't available; use name lookups
         return None  # handled in the recursive walk below
 
-    def walk(node, enclosing_nid: Optional[str]):
+    def walk(node, enclosing_nid: str | None):
         # Detect enclosing scope changes
         if node.type in ("function_definition",):
             name_node = node.child_by_field_name("name")
@@ -368,21 +393,27 @@ def _extract_file_calls_v2(
 
         if enclosing_nid:
             # Detect calls at this level
-            calls: List[str] = []
+            calls: list[str] = []
             _collect_calls_shallow(node, calls)
             for call_name in calls:
                 if call_name == symbol_table.get((file_path, "__name__"), ""):
                     continue
-                target_nid, confidence = _resolve_call(call_name, file_path, symbol_table, import_map)
+                target_nid, confidence = _resolve_call(
+                    call_name, file_path, symbol_table, import_map
+                )
                 if target_nid and target_nid != enclosing_nid and confidence >= 0.5:
                     rel_id = _rel_id("CALLS", enclosing_nid, target_nid)
                     if not graph.get_relationship(rel_id):
-                        graph.add_relationship(GraphRelationship(
-                            id=rel_id,
-                            source_id=enclosing_nid, target_id=target_nid,
-                            type="CALLS", confidence=confidence,
-                            reason=f"tier:{confidence:.2f}",
-                        ))
+                        graph.add_relationship(
+                            GraphRelationship(
+                                id=rel_id,
+                                source_id=enclosing_nid,
+                                target_id=target_nid,
+                                type="CALLS",
+                                confidence=confidence,
+                                reason=f"tier:{confidence:.2f}",
+                            )
+                        )
                         counter[0] += 1
 
         for child in node.children:
@@ -391,10 +422,16 @@ def _extract_file_calls_v2(
     walk(root, None)
 
 
-def _collect_calls_shallow(node, calls: List[str]) -> None:
+def _collect_calls_shallow(node, calls: list[str]) -> None:
     """Collect direct calls (non-recursive into nested function bodies)."""
-    if node.type in ("function_definition", "function_declaration", "method_definition",
-                     "arrow_function", "function_expression", "function"):
+    if node.type in (
+        "function_definition",
+        "function_declaration",
+        "method_definition",
+        "arrow_function",
+        "function_expression",
+        "function",
+    ):
         return  # Don't recurse into nested function bodies at this level
     if node.type == "call":
         fn = node.child_by_field_name("function")
@@ -429,9 +466,10 @@ def _extract_file_calls(root, file_path, lang, graph, symbol_table, import_map, 
 
 # ── 3. Heritage relationships ─────────────────────────────────
 
+
 def build_heritage_relationships(
     graph: KnowledgeGraph,
-    files: List[RepoFile],
+    files: list[RepoFile],
     symbol_table: SymbolTable,
     import_map: ImportMap,
 ) -> None:
@@ -451,12 +489,16 @@ def build_heritage_relationships(
 
         rel_id = _rel_id("EXTENDS", class_nid, base_nid)
         if not graph.get_relationship(rel_id):
-            graph.add_relationship(GraphRelationship(
-                id=rel_id,
-                source_id=class_nid, target_id=base_nid,
-                type="EXTENDS", confidence=confidence,
-                reason="class_inheritance",
-            ))
+            graph.add_relationship(
+                GraphRelationship(
+                    id=rel_id,
+                    source_id=class_nid,
+                    target_id=base_nid,
+                    type="EXTENDS",
+                    confidence=confidence,
+                    reason="class_inheritance",
+                )
+            )
             rel_counter += 1
 
     logger.info(f"[relationships] heritage edges={rel_counter}")
@@ -464,12 +506,14 @@ def build_heritage_relationships(
 
 # ── 4. Structure relationships (HAS_METHOD) ───────────────────
 
+
 def build_structure_relationships(graph: KnowledgeGraph) -> None:
     """Build HAS_METHOD edges from Class → Method nodes."""
     rel_counter = 0
 
-    class_nodes = {n.properties.file_path + ":" + n.properties.name: n
-                   for n in graph.nodes_by_label("Class")}
+    class_nodes = {
+        n.properties.file_path + ":" + n.properties.name: n for n in graph.nodes_by_label("Class")
+    }
 
     for method_node in graph.nodes_by_label("Method"):
         qualified = method_node.properties.name  # e.g. "QAEngine.build"
@@ -483,12 +527,16 @@ def build_structure_relationships(graph: KnowledgeGraph) -> None:
             continue
         rel_id = _rel_id("HAS_METHOD", class_node.id, method_node.id)
         if not graph.get_relationship(rel_id):
-            graph.add_relationship(GraphRelationship(
-                id=rel_id,
-                source_id=class_node.id, target_id=method_node.id,
-                type="HAS_METHOD", confidence=1.0,
-                reason="class_method",
-            ))
+            graph.add_relationship(
+                GraphRelationship(
+                    id=rel_id,
+                    source_id=class_node.id,
+                    target_id=method_node.id,
+                    type="HAS_METHOD",
+                    confidence=1.0,
+                    reason="class_method",
+                )
+            )
             rel_counter += 1
 
     logger.info(f"[relationships] has_method edges={rel_counter}")

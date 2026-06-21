@@ -1,15 +1,15 @@
 """Embedder using Google GenAI embeddings."""
+
 from __future__ import annotations
 
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import List
 
 import numpy as np
 
-from .config import get_config
 from ._retry import gemini_retry
+from .config import get_config, make_genai_client
 
 logger = logging.getLogger("rai.embedder")
 
@@ -39,7 +39,6 @@ class Embedder:
 
     def __post_init__(self) -> None:
         try:
-            from google import genai
             from google.genai import types
         except ImportError as e:
             raise ImportError(
@@ -56,11 +55,11 @@ class Embedder:
         else:
             self._dim = _MODEL_DIMS.get(self.model_name.split("/")[-1], _DEFAULT_DIM)
 
-        self._client = genai.Client(api_key=config.google_api_key)
+        self._client = make_genai_client(config)
         self._types = types
 
     @gemini_retry
-    def _embed_batch(self, batch: List[str], task_type: str) -> List[List[float]]:
+    def _embed_batch(self, batch: list[str], task_type: str) -> list[list[float]]:
         result = self._client.models.embed_content(
             model=self.model_name,
             contents=batch,
@@ -71,15 +70,17 @@ class Embedder:
         )
         return [emb.values for emb in result.embeddings]
 
-    def embed_texts(self, texts: List[str], batch_size: int = 100) -> np.ndarray:
+    def embed_texts(self, texts: list[str], batch_size: int = 100) -> np.ndarray:
         """Embed many texts. Returns (N, dim) L2-normalized float32 array."""
         if not texts:
             return np.empty((0, self._dim), dtype=np.float32)
 
         batch_size = min(batch_size, 100)  # API hard limit
-        all_embeddings: List[List[float]] = []
+        all_embeddings: list[list[float]] = []
 
-        logger.info("Embedding %d texts in batches of %d (%s)", len(texts), batch_size, self.model_name)
+        logger.info(
+            "Embedding %d texts in batches of %d (%s)", len(texts), batch_size, self.model_name
+        )
         t0 = time.time()
 
         for i in range(0, len(texts), batch_size):

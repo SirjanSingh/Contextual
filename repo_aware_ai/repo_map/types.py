@@ -2,27 +2,40 @@
 
 Ported from GitNexus graph/types.ts — Python dataclass equivalents.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional
-
+from typing import Literal
 
 # ── Node & Relationship type literals ──────────────────────────
 
 NodeLabel = Literal[
-    "Function", "Class", "Method", "Interface",
-    "File", "Folder", "Community", "Process",
+    "Function",
+    "Class",
+    "Method",
+    "Interface",
+    "File",
+    "Folder",
+    "Community",
+    "Process",
 ]
 
 RelationshipType = Literal[
-    "CALLS", "IMPORTS", "EXTENDS", "IMPLEMENTS",
-    "CONTAINS", "HAS_METHOD", "HAS_PROPERTY",
-    "MEMBER_OF", "STEP_IN_PROCESS",
+    "CALLS",
+    "IMPORTS",
+    "EXTENDS",
+    "IMPLEMENTS",
+    "CONTAINS",
+    "HAS_METHOD",
+    "HAS_PROPERTY",
+    "MEMBER_OF",
+    "STEP_IN_PROCESS",
 ]
 
 
 # ── Graph primitives ──────────────────────────────────────────
+
 
 @dataclass
 class NodeProperties:
@@ -36,14 +49,14 @@ class NodeProperties:
     heuristic_label: str = ""
     cohesion: float = 0.0
     symbol_count: int = 0
-    process_type: str = ""      # "intra_community" | "cross_community"
+    process_type: str = ""  # "intra_community" | "cross_community"
     step_count: int = 0
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v or k == "name"}
 
     @classmethod
-    def from_dict(cls, d: Dict) -> NodeProperties:
+    def from_dict(cls, d: dict) -> NodeProperties:
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
@@ -53,11 +66,11 @@ class GraphNode:
     label: NodeLabel
     properties: NodeProperties
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {"id": self.id, "label": self.label, "properties": self.properties.to_dict()}
 
     @classmethod
-    def from_dict(cls, d: Dict) -> GraphNode:
+    def from_dict(cls, d: dict) -> GraphNode:
         return cls(
             id=d["id"],
             label=d["label"],
@@ -73,10 +86,10 @@ class GraphRelationship:
     type: RelationshipType
     confidence: float = 1.0
     reason: str = ""
-    step: Optional[int] = None  # 1-indexed for STEP_IN_PROCESS
+    step: int | None = None  # 1-indexed for STEP_IN_PROCESS
 
-    def to_dict(self) -> Dict:
-        d: Dict = {
+    def to_dict(self) -> dict:
+        d: dict = {
             "id": self.id,
             "source_id": self.source_id,
             "target_id": self.target_id,
@@ -89,7 +102,7 @@ class GraphRelationship:
         return d
 
     @classmethod
-    def from_dict(cls, d: Dict) -> GraphRelationship:
+    def from_dict(cls, d: dict) -> GraphRelationship:
         return cls(
             id=d["id"],
             source_id=d["source_id"],
@@ -103,6 +116,7 @@ class GraphRelationship:
 
 # ── Community detection results ───────────────────────────────
 
+
 @dataclass
 class CommunityNode:
     id: str
@@ -111,11 +125,11 @@ class CommunityNode:
     cohesion: float
     symbol_count: int
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return self.__dict__.copy()
 
     @classmethod
-    def from_dict(cls, d: Dict) -> CommunityNode:
+    def from_dict(cls, d: dict) -> CommunityNode:
         return cls(**d)
 
 
@@ -124,21 +138,21 @@ class CommunityMembership:
     node_id: str
     community_id: str
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return self.__dict__.copy()
 
     @classmethod
-    def from_dict(cls, d: Dict) -> CommunityMembership:
+    def from_dict(cls, d: dict) -> CommunityMembership:
         return cls(**d)
 
 
 @dataclass
 class CommunityDetectionResult:
-    communities: List[CommunityNode] = field(default_factory=list)
-    memberships: List[CommunityMembership] = field(default_factory=list)
-    stats: Dict = field(default_factory=dict)
+    communities: list[CommunityNode] = field(default_factory=list)
+    memberships: list[CommunityMembership] = field(default_factory=list)
+    stats: dict = field(default_factory=dict)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "communities": [c.to_dict() for c in self.communities],
             "memberships": [m.to_dict() for m in self.memberships],
@@ -146,7 +160,7 @@ class CommunityDetectionResult:
         }
 
     @classmethod
-    def from_dict(cls, d: Dict) -> CommunityDetectionResult:
+    def from_dict(cls, d: dict) -> CommunityDetectionResult:
         return cls(
             communities=[CommunityNode.from_dict(c) for c in d.get("communities", [])],
             memberships=[CommunityMembership.from_dict(m) for m in d.get("memberships", [])],
@@ -156,17 +170,18 @@ class CommunityDetectionResult:
 
 # ── Process detection results ─────────────────────────────────
 
+
 @dataclass
 class ProcessStep:
     process_id: str
     node_id: str
     step: int  # 1-indexed
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return self.__dict__.copy()
 
     @classmethod
-    def from_dict(cls, d: Dict) -> ProcessStep:
+    def from_dict(cls, d: dict) -> ProcessStep:
         return cls(**d)
 
 
@@ -177,26 +192,26 @@ class ProcessNode:
     heuristic_label: str
     process_type: str  # "intra_community" | "cross_community"
     step_count: int
-    communities: List[str] = field(default_factory=list)
-    trace: List[str] = field(default_factory=list)
+    communities: list[str] = field(default_factory=list)
+    trace: list[str] = field(default_factory=list)
     entry_point_id: str = ""
     terminal_id: str = ""
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return self.__dict__.copy()
 
     @classmethod
-    def from_dict(cls, d: Dict) -> ProcessNode:
+    def from_dict(cls, d: dict) -> ProcessNode:
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
 class ProcessDetectionResult:
-    processes: List[ProcessNode] = field(default_factory=list)
-    steps: List[ProcessStep] = field(default_factory=list)
-    stats: Dict = field(default_factory=dict)
+    processes: list[ProcessNode] = field(default_factory=list)
+    steps: list[ProcessStep] = field(default_factory=list)
+    stats: dict = field(default_factory=dict)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "processes": [p.to_dict() for p in self.processes],
             "steps": [s.to_dict() for s in self.steps],
@@ -204,7 +219,7 @@ class ProcessDetectionResult:
         }
 
     @classmethod
-    def from_dict(cls, d: Dict) -> ProcessDetectionResult:
+    def from_dict(cls, d: dict) -> ProcessDetectionResult:
         return cls(
             processes=[ProcessNode.from_dict(p) for p in d.get("processes", [])],
             steps=[ProcessStep.from_dict(s) for s in d.get("steps", [])],
@@ -214,15 +229,16 @@ class ProcessDetectionResult:
 
 # ── Top-level container ───────────────────────────────────────
 
+
 @dataclass
 class RepoMapData:
-    nodes: List[GraphNode] = field(default_factory=list)
-    relationships: List[GraphRelationship] = field(default_factory=list)
+    nodes: list[GraphNode] = field(default_factory=list)
+    relationships: list[GraphRelationship] = field(default_factory=list)
     communities: CommunityDetectionResult = field(default_factory=CommunityDetectionResult)
     processes: ProcessDetectionResult = field(default_factory=ProcessDetectionResult)
-    stats: Dict = field(default_factory=dict)
+    stats: dict = field(default_factory=dict)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "nodes": [n.to_dict() for n in self.nodes],
             "relationships": [r.to_dict() for r in self.relationships],
@@ -232,7 +248,7 @@ class RepoMapData:
         }
 
     @classmethod
-    def from_dict(cls, d: Dict) -> RepoMapData:
+    def from_dict(cls, d: dict) -> RepoMapData:
         return cls(
             nodes=[GraphNode.from_dict(n) for n in d.get("nodes", [])],
             relationships=[GraphRelationship.from_dict(r) for r in d.get("relationships", [])],

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass(frozen=True)
 class Chunk:
     text: str
-    source: str      # relative file path
+    source: str  # relative file path
     start_char: int
     end_char: int
 
@@ -17,7 +16,7 @@ def chunk_text(
     source: str,
     chunk_size: int = 1800,
     overlap: int = 250,
-) -> List[Chunk]:
+) -> list[Chunk]:
     """
     Character-based chunking with overlap.
     - For codebases, char-chunking is robust and fast.
@@ -26,7 +25,7 @@ def chunk_text(
     if overlap >= chunk_size:
         raise ValueError("overlap must be smaller than chunk_size")
 
-    chunks: List[Chunk] = []
+    chunks: list[Chunk] = []
     n = len(text)
     start = 0
 
@@ -47,16 +46,18 @@ def chunk_text(
     return chunks
 
 
-def chunk_files(repo_files, chunk_size: int = 1800, overlap: int = 250, use_ast: bool = False) -> List[Chunk]:
-    all_chunks: List[Chunk] = []
-    
+def chunk_files(
+    repo_files, chunk_size: int = 1800, overlap: int = 250, use_ast: bool = False
+) -> list[Chunk]:
+    all_chunks: list[Chunk] = []
+
     if use_ast:
         from .ast_chunker import ast_chunk_python
-    
+
     for rf in repo_files:
         if use_ast and rf.path.endswith(".py"):
             all_chunks.extend(ast_chunk_python(rf.text, rf.path, max_chunk_size=chunk_size))
         else:
             all_chunks.extend(chunk_text(rf.text, rf.path, chunk_size=chunk_size, overlap=overlap))
-    
+
     return all_chunks

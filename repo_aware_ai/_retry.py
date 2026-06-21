@@ -8,11 +8,13 @@ problem.
 If `tenacity` is not installed, the decorator becomes a no-op so the package
 still works on a minimal install.
 """
+
 from __future__ import annotations
 
 import logging
 import os
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 logger = logging.getLogger("rai.retry")
 
@@ -37,11 +39,11 @@ def _no_op(fn: F) -> F:
 
 try:
     from tenacity import (
+        before_sleep_log,
         retry,
         retry_if_exception,
         stop_after_attempt,
         wait_exponential,
-        before_sleep_log,
     )
 
     _MAX_ATTEMPTS = int(os.environ.get("RAI_GEMINI_MAX_RETRIES", "4"))

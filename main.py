@@ -17,12 +17,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--temperature", type=float, default=0.2, help="LLM temperature")
     p.add_argument("--chunk_size", type=int, default=1800, help="Chunk size (characters)")
     p.add_argument("--overlap", type=int, default=250, help="Chunk overlap (characters)")
-    p.add_argument("--no-rerank", action="store_true", help="Disable reranking (faster but less accurate)")
+    p.add_argument(
+        "--no-rerank", action="store_true", help="Disable reranking (faster but less accurate)"
+    )
     p.add_argument("--no-hybrid", action="store_true", help="Disable hybrid search (vector-only)")
     p.add_argument("--no-expand", action="store_true", help="Disable query expansion")
     p.add_argument("--no-compress", action="store_true", help="Disable contextual compression")
-    p.add_argument("--ast-chunk", action="store_true", help="Enable AST-based chunking for Python files (requires --rebuild)")
-    p.add_argument("--no-multi-query", action="store_true", help="Disable multi-query decomposition")
+    p.add_argument(
+        "--ast-chunk",
+        action="store_true",
+        help="Enable AST-based chunking for Python files (requires --rebuild)",
+    )
+    p.add_argument(
+        "--no-multi-query", action="store_true", help="Disable multi-query decomposition"
+    )
     return p.parse_args()
 
 
@@ -32,7 +40,7 @@ def main() -> None:
     cache_base = Path(args.cache).resolve()
 
     print("[+] Initializing Google AI clients...")
-    
+
     try:
         embedder = Embedder()
         llm = LLMClient(temperature=args.temperature)

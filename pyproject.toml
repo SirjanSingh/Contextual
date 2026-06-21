@@ -105,7 +105,14 @@ exclude = [".venv", ".venv_new", "data", "debug_logs", "docs/archive", "tmp", "f
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "W"]
-ignore = ["E501"]  # line length handled by formatter
+ignore = [
+  "E501",  # line length handled by formatter
+  "E402",  # logging.basicConfig must run before module-level loggers in submodules
+  "B008",  # FastAPI uses Depends() / File() in function defaults by design
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B905"]  # zip(strict=) noise in test fixtures
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

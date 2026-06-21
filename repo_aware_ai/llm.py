@@ -1,13 +1,13 @@
 """LLM client using Google Gemini API."""
+
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Iterator, List
 
 from ._retry import gemini_retry
-from .config import get_config
+from .config import get_config, make_genai_client
 from .retriever import RetrievedChunk
-
 
 SYSTEM_PROMPT = """You are a repo-aware coding assistant.
 
@@ -35,9 +35,9 @@ Sources:
 """
 
 
-def _format_context(chunks: List[RetrievedChunk], max_chars: int = 15000) -> str:
+def _format_context(chunks: list[RetrievedChunk], max_chars: int = 15000) -> str:
     """Build a compact context block within a safe budget."""
-    parts: List[str] = []
+    parts: list[str] = []
     used = 0
     for c in chunks:
         header = f"\n---\nFILE: {c.source} [{c.start_char}-{c.end_char}] (score={c.score:.3f})\n"
@@ -50,15 +50,19 @@ def _format_context(chunks: List[RetrievedChunk], max_chars: int = 15000) -> str
     return "".join(parts).strip()
 
 
-def _build_prompt(question: str, chunks: List[RetrievedChunk], conversation_context: str) -> str:
+def _build_prompt(question: str, chunks: list[RetrievedChunk], conversation_context: str) -> str:
     context = _format_context(chunks)
     full_context = (conversation_context + context) if conversation_context else context
-    return SYSTEM_PROMPT + "\n\n" + (
-        f"REPO CONTEXT:\n{full_context}\n\n"
-        f"QUESTION:\n{question}\n\n"
-        'Answer ONLY if the information is explicitly present in the REPO CONTEXT.\n'
-        'If not, say: "Not found in the retrieved repository context."\n'
-        "Follow the Answer/Evidence/Sources format. Do not add extra meta text\n"
+    return (
+        SYSTEM_PROMPT
+        + "\n\n"
+        + (
+            f"REPO CONTEXT:\n{full_context}\n\n"
+            f"QUESTION:\n{question}\n\n"
+            "Answer ONLY if the information is explicitly present in the REPO CONTEXT.\n"
+            'If not, say: "Not found in the retrieved repository context."\n'
+            "Follow the Answer/Evidence/Sources format. Do not add extra meta text\n"
+        )
     )
 
 
@@ -68,8 +72,11 @@ def _humanize_error(exc: Exception) -> str:
     if "API_KEY" in upper or "AUTHENTICATION" in upper or "UNAUTHENTICATED" in upper:
         return (
             f"API authentication error: {msg}\n\n"
-            "Tip: ensure GOOGLE_API_KEY is set in your .env. "
-            "Get a key at https://aistudio.google.com/app/apikey"
+            "Tip (Gemini API): ensure GOOGLE_API_KEY is set in your .env — "
+            "get a key at https://aistudio.google.com/app/apikey\n"
+            "Tip (Vertex AI): VERTEX_ACCESS_TOKEN may have expired (~1h). Refresh with "
+            "`gcloud auth print-access-token`, or run `gcloud auth application-default login` "
+            "and remove VERTEX_ACCESS_TOKEN to use ADC."
         )
     if "429" in msg or "RESOURCE_EXHAUSTED" in upper:
         return (
@@ -90,7 +97,6 @@ class LLMClient:
 
     def __post_init__(self) -> None:
         try:
-            from google import genai
             from google.genai import types
         except ImportError as e:
             raise ImportError(
@@ -98,8 +104,12 @@ class LLMClient:
             ) from e
 
         config = get_config()
-        self._client = genai.Client(api_key=config.google_api_key)
-        self.model = config.gemini_model
+        self._client = make_genai_client(config)
+        model = config.gemini_model
+        # Vertex AI rejects the "models/" prefix; the Gemini API tolerates either.
+        if config.use_vertex and model.startswith("models/"):
+            model = model[len("models/") :]
+        self.model = model
         self._types = types
 
     def _gen_config(self):
@@ -136,7 +146,7 @@ class LLMClient:
     def answer(
         self,
         question: str,
-        chunks: List[RetrievedChunk],
+        chunks: list[RetrievedChunk],
         conversation_context: str = "",
     ) -> str:
         prompt = _build_prompt(question, chunks, conversation_context)
@@ -148,7 +158,7 @@ class LLMClient:
     def stream_answer(
         self,
         question: str,
-        chunks: List[RetrievedChunk],
+        chunks: list[RetrievedChunk],
         conversation_context: str = "",
     ) -> Iterator[str]:
         """Stream answer chunks as they arrive from Gemini.

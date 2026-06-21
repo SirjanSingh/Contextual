@@ -7,3 +7,9 @@ node_modules/**
 esbuild.js
 tsconfig.json
 .gitignore
+
+# Local scratch
+*.vsix
+.DS_Store
+Thumbs.db
+package-lock.json

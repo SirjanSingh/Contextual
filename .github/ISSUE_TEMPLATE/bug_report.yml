@@ -1,0 +1,67 @@
+name: Bug report
+description: Something is broken or behaving unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report. Please check open issues first
+        to see if your problem has already been reported.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface?
+      options:
+        - CLI (`repo-aware-ai`)
+        - Web app (`repo-aware-ai-server` + frontend)
+        - VS Code extension
+        - Backend API directly
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. Paste error messages and stack traces inside fenced code blocks.
+      placeholder: When I run X, I expected Y but got Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `repo-aware-ai-server --port 18360 --repo .`
+        2. Open the chat panel
+        3. Ask "where is X defined"
+        4. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of `pip show repo-aware-ai` or the commit SHA you're on.
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "Windows 11 / macOS 14.4 / Ubuntu 22.04"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        For the extension, run **Repo AI: Show Backend Logs** and paste the relevant section.
+        For the server, paste the terminal output.
+      render: shell

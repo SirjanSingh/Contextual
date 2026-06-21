@@ -1,4 +1,5 @@
 """FastAPI web server for Contextual RAG system."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,10 +7,18 @@ import logging
 import os
 import threading
 import time
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import AsyncGenerator, List, Optional
 
-from fastapi import FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,9 +37,9 @@ logger = logging.getLogger("rai.server")
 from .config import get_config
 from .embedder import Embedder
 from .llm import LLMClient
+from .progress_tracker import create_progress, get_progress
 from .qa import QAEngine
-from .progress_tracker import create_progress, get_progress, remove_progress
-from .upload_handler import save_uploaded_files, process_repository_sync
+from .upload_handler import process_repository_sync, save_uploaded_files
 
 # ──────────────────────────────────────────────
 # App & state
@@ -70,13 +79,13 @@ async def log_requests(request: Request, call_next):
 
 
 # Global engine state
-_engine: Optional[QAEngine] = None
+_engine: QAEngine | None = None
 _engine_lock = threading.Lock()
 _index_status = "none"  # none | building | ready | error
 _index_info: dict = {}
 
 
-def _get_engine() -> Optional[QAEngine]:
+def _get_engine() -> QAEngine | None:
     return _engine
 
 
@@ -84,15 +93,16 @@ def _get_engine() -> Optional[QAEngine]:
 # Request / Response models
 # ──────────────────────────────────────────────
 
+
 class QueryRequest(BaseModel):
     question: str
-    repo_path: Optional[str] = None
-    top_k: Optional[int] = None  # honored by /search; ignored by /query and /query/stream
+    repo_path: str | None = None
+    top_k: int | None = None  # honored by /search; ignored by /query and /query/stream
 
 
 class QueryResponse(BaseModel):
     answer: str
-    sources: List[str]
+    sources: list[str]
 
 
 class IndexStatus(BaseModel):
@@ -126,17 +136,18 @@ class ChunkResult(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    chunks: List[ChunkResult]
+    chunks: list[ChunkResult]
 
 
 class FileContextResponse(BaseModel):
-    chunks: List[ChunkResult]
-    related_files: List[str]
+    chunks: list[ChunkResult]
+    related_files: list[str]
 
 
 # ──────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
@@ -163,17 +174,19 @@ async def index_status():
 async def query(req: QueryRequest):
     engine = _get_engine()
     if engine is None or engine.index is None:
-        raise HTTPException(status_code=400, detail="No repository indexed yet. Upload a directory first.")
+        raise HTTPException(
+            status_code=400, detail="No repository indexed yet. Upload a directory first."
+        )
 
     logger.info(f"Query: {req.question[:100]}")
     t0 = time.time()
     try:
         answer, sources = engine.ask(req.question)
-        logger.info(f"Query answered in {(time.time()-t0)*1000:.0f}ms, {len(sources)} sources")
+        logger.info(f"Query answered in {(time.time() - t0) * 1000:.0f}ms, {len(sources)} sources")
         return QueryResponse(answer=answer, sources=sources)
     except Exception as e:
         logger.exception(f"Query failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/query/stream")
@@ -251,6 +264,7 @@ async def semantic_search(req: QueryRequest):
         top_k = max(1, min(req.top_k or 8, 50))
         if engine.use_hybrid_search and engine._bm25_index is not None:
             from .hybrid_search import hybrid_retrieve
+
             chunks = hybrid_retrieve(
                 faiss_index=engine.index,
                 bm25_index=engine._bm25_index,
@@ -282,7 +296,7 @@ async def semantic_search(req: QueryRequest):
             ]
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.get("/context/file", response_model=FileContextResponse)
@@ -311,9 +325,10 @@ async def file_context(file_path: str):
         ]
 
         # Find related files via semantic search on first chunk's text
-        related_files: List[str] = []
+        related_files: list[str] = []
         if file_chunks and engine.index is not None:
             from .retriever import retrieve
+
             sample_text = file_chunks[0].text[:500]
             related = retrieve(
                 index=engine.index,
@@ -331,7 +346,7 @@ async def file_context(file_path: str):
 
         return FileContextResponse(chunks=file_chunks, related_files=related_files[:5])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/index/directory")
@@ -378,7 +393,11 @@ async def index_directory(req: IndexDirectoryRequest):
             _index_status = "ready"
             logger.info("[indexer] Index ready: %d chunks in %.1fs", chunk_count, elapsed)
         except Exception as e:  # noqa: BLE001
-            _index_info = {"repo_path": str(repo_path), "error": str(e), "error_type": type(e).__name__}
+            _index_info = {
+                "repo_path": str(repo_path),
+                "error": str(e),
+                "error_type": type(e).__name__,
+            }
             _index_status = "error"
             logger.exception("[indexer] Index failed: %s", e)
 
@@ -415,11 +434,11 @@ async def rebuild_index():
         _index_info = {"error": str(e), "error_type": type(e).__name__}
         _index_status = "error"
         logger.exception("rebuild failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/upload/directory", response_model=UploadResponse)
-async def upload_directory(files: List[UploadFile] = File(...)):
+async def upload_directory(files: list[UploadFile] = File(...)):
     global _engine, _index_status, _index_info
 
     progress = create_progress(total_files=len(files))
@@ -461,7 +480,11 @@ async def upload_directory(files: List[UploadFile] = File(...)):
         except Exception as e:  # noqa: BLE001
             progress.update(stage="error", current_file=str(e))
             progress.errors.append(str(e))
-            _index_info = {"repo_path": str(repo_path), "error": str(e), "error_type": type(e).__name__}
+            _index_info = {
+                "repo_path": str(repo_path),
+                "error": str(e),
+                "error_type": type(e).__name__,
+            }
             _index_status = "error"
             logger.exception("upload-index failed: %s", e)
 
@@ -524,6 +547,7 @@ async def clear_repository():
 # Graph endpoints (for Repo Map visualization)
 # ──────────────────────────────────────────────
 
+
 @app.get("/graph/dependencies")
 async def dependency_graph():
     """Return file-to-file IMPORTS edges (from repo map if available, regex fallback)."""
@@ -539,11 +563,13 @@ async def dependency_graph():
         seen_edges = set()
         for node in graph.iter_nodes():
             if node.label == "File":
-                nodes.append({
-                    "id": node.properties.file_path,
-                    "label": node.properties.name,
-                    "type": "file",
-                })
+                nodes.append(
+                    {
+                        "id": node.properties.file_path,
+                        "label": node.properties.name,
+                        "type": "file",
+                    }
+                )
         for rel in graph.relationships_by_type("IMPORTS"):
             src = rel.source_id.replace("File:", "")
             tgt = rel.target_id.replace("File:", "")
@@ -556,6 +582,7 @@ async def dependency_graph():
     # Fallback: regex-based (original behaviour)
     import re
     from collections import defaultdict
+
     file_chunks: dict = defaultdict(list)
     for m in engine.metadata:
         file_chunks[m.get("source", "unknown")].append(m)
@@ -590,27 +617,36 @@ async def semantic_clusters():
     # Use repo map communities if available
     if engine._repo_map is not None:
         communities = engine._repo_map.communities.communities
-        membership_map = {m.node_id: m.community_id for m in engine._repo_map.communities.memberships}
+        membership_map = {
+            m.node_id: m.community_id for m in engine._repo_map.communities.memberships
+        }
         graph = engine._repo_graph
         clusters = []
         for comm in communities:
-            files = list({
-                graph.get_node(nid).properties.file_path
-                for nid, cid in membership_map.items()
-                if cid == comm.id and graph.get_node(nid) and graph.get_node(nid).properties.file_path
-            })
-            clusters.append({
-                "id": comm.id,
-                "centroid_label": comm.heuristic_label,
-                "files": files,
-                "size": comm.symbol_count,
-                "cohesion": round(comm.cohesion, 3),
-            })
+            files = list(
+                {
+                    graph.get_node(nid).properties.file_path
+                    for nid, cid in membership_map.items()
+                    if cid == comm.id
+                    and graph.get_node(nid)
+                    and graph.get_node(nid).properties.file_path
+                }
+            )
+            clusters.append(
+                {
+                    "id": comm.id,
+                    "centroid_label": comm.heuristic_label,
+                    "files": files,
+                    "size": comm.symbol_count,
+                    "cohesion": round(comm.cohesion, 3),
+                }
+            )
         return {"clusters": clusters}
 
     # Fallback: k-means
     try:
         import numpy as np
+
         try:
             from sklearn.cluster import KMeans
         except ImportError:
@@ -625,25 +661,30 @@ async def semantic_clusters():
         clusters = []
         for cluster_id in range(k):
             cluster_indices = [i for i, lbl in enumerate(labels) if lbl == cluster_id]
-            files_in_cluster = list({
-                engine.metadata[i].get("source", "unknown")
-                for i in cluster_indices
-                if i < len(engine.metadata)
-            })
-            clusters.append({
-                "id": cluster_id,
-                "centroid_label": f"Cluster {cluster_id}",
-                "files": files_in_cluster,
-                "size": len(cluster_indices),
-            })
+            files_in_cluster = list(
+                {
+                    engine.metadata[i].get("source", "unknown")
+                    for i in cluster_indices
+                    if i < len(engine.metadata)
+                }
+            )
+            clusters.append(
+                {
+                    "id": cluster_id,
+                    "centroid_label": f"Cluster {cluster_id}",
+                    "files": files_in_cluster,
+                    "size": len(cluster_indices),
+                }
+            )
         return {"clusters": clusters}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # ──────────────────────────────────────────────
 # Repo Map endpoints
 # ──────────────────────────────────────────────
+
 
 def _require_repo_map():
     """Return (engine, repo_map, repo_graph) or raise 400/503."""
@@ -698,18 +739,20 @@ async def list_symbols(
             continue
         if community and membership_map.get(node.id) != community:
             continue
-        results.append({
-            "id": node.id,
-            "label": node.label,
-            "name": node.properties.name,
-            "file_path": node.properties.file_path,
-            "start_line": node.properties.start_line,
-            "language": node.properties.language,
-            "is_exported": node.properties.is_exported,
-            "community": membership_map.get(node.id),
-        })
+        results.append(
+            {
+                "id": node.id,
+                "label": node.label,
+                "name": node.properties.name,
+                "file_path": node.properties.file_path,
+                "start_line": node.properties.start_line,
+                "language": node.properties.language,
+                "is_exported": node.properties.is_exported,
+                "community": membership_map.get(node.id),
+            }
+        )
     total = len(results)
-    return {"total": total, "symbols": results[offset: offset + limit]}
+    return {"total": total, "symbols": results[offset : offset + limit]}
 
 
 @app.get("/graph/symbol/{symbol_id:path}")
@@ -726,8 +769,12 @@ async def get_symbol(symbol_id: str):
         n = graph.get_node(nid)
         if not n:
             return {"id": nid}
-        return {"id": nid, "name": n.properties.name, "label": n.label,
-                "file_path": n.properties.file_path}
+        return {
+            "id": nid,
+            "name": n.properties.name,
+            "label": n.label,
+            "file_path": n.properties.file_path,
+        }
 
     callers = [_node_summary(r.source_id) for r in graph.incoming(symbol_id, "CALLS")]
     callees = [_node_summary(r.target_id) for r in graph.outgoing(symbol_id, "CALLS")]
@@ -762,13 +809,21 @@ async def get_community(community_id: str):
     for nid in member_ids:
         n = graph.get_node(nid)
         if n:
-            members.append({"id": nid, "name": n.properties.name, "label": n.label,
-                            "file_path": n.properties.file_path})
+            members.append(
+                {
+                    "id": nid,
+                    "name": n.properties.name,
+                    "label": n.label,
+                    "file_path": n.properties.file_path,
+                }
+            )
 
     internal_rels = [
         {"source": r.source_id, "target": r.target_id, "type": r.type}
         for r in graph.iter_relationships()
-        if r.type in ("CALLS", "EXTENDS") and r.source_id in member_set and r.target_id in member_set
+        if r.type in ("CALLS", "EXTENDS")
+        and r.source_id in member_set
+        and r.target_id in member_set
     ]
 
     return {
@@ -792,13 +847,15 @@ async def get_process(process_id: str):
     steps = []
     for step_num, nid in enumerate(proc.trace, start=1):
         n = graph.get_node(nid)
-        steps.append({
-            "step": step_num,
-            "node_id": nid,
-            "name": n.properties.name if n else nid,
-            "file_path": n.properties.file_path if n else "",
-            "label": n.label if n else "",
-        })
+        steps.append(
+            {
+                "step": step_num,
+                "node_id": nid,
+                "name": n.properties.name if n else nid,
+                "file_path": n.properties.file_path if n else "",
+                "label": n.label if n else "",
+            }
+        )
 
     return {
         "id": proc.id,
@@ -823,24 +880,28 @@ async def get_neighborhood(symbol_id: str, hops: int = 2):
     nodes = []
     for n in sub.iter_nodes():
         if n.label in ("Function", "Class", "Method", "Interface", "File"):
-            nodes.append({
-                "id": n.id,
-                "label": n.label,
-                "name": n.properties.name,
-                "file_path": n.properties.file_path,
-                "community": membership_map.get(n.id),
-                "is_focal": n.id == symbol_id,
-            })
+            nodes.append(
+                {
+                    "id": n.id,
+                    "label": n.label,
+                    "name": n.properties.name,
+                    "file_path": n.properties.file_path,
+                    "community": membership_map.get(n.id),
+                    "is_focal": n.id == symbol_id,
+                }
+            )
 
     edges = []
     for r in sub.iter_relationships():
         if r.type in ("CALLS", "IMPORTS", "EXTENDS"):
-            edges.append({
-                "source": r.source_id,
-                "target": r.target_id,
-                "type": r.type,
-                "confidence": r.confidence,
-            })
+            edges.append(
+                {
+                    "source": r.source_id,
+                    "target": r.target_id,
+                    "type": r.type,
+                    "confidence": r.confidence,
+                }
+            )
 
     return {"nodes": nodes, "edges": edges}
 
@@ -851,6 +912,7 @@ async def get_neighborhood(symbol_id: str, hops: int = 2):
 
 _auto_index_path = os.environ.get("RAI_AUTO_INDEX")
 if _auto_index_path:
+
     @app.on_event("startup")
     async def _auto_index() -> None:
         """Kick off indexing in-process at server startup.
@@ -872,6 +934,7 @@ if _auto_index_path:
 # ──────────────────────────────────────────────
 # /dev/ debug endpoint
 # ──────────────────────────────────────────────
+
 
 @app.get("/dev/debug")
 async def dev_debug():
@@ -895,6 +958,7 @@ async def dev_debug():
 # ──────────────────────────────────────────────
 # /dev/ test dashboard (separate from prod frontend)
 # ──────────────────────────────────────────────
+
 
 @app.get("/dev/", response_class=HTMLResponse)
 @app.get("/dev", response_class=HTMLResponse)

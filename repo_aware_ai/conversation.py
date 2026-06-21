@@ -1,9 +1,9 @@
 """Conversation history management for multi-turn dialogues."""
+
 from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import List
 
 
 @dataclass
@@ -12,7 +12,7 @@ class ConversationTurn:
 
     question: str
     answer: str
-    sources: List[str]
+    sources: list[str]
 
 
 @dataclass
@@ -24,10 +24,10 @@ class ConversationHistory:
     """
 
     max_turns: int = 5
-    _history: List[ConversationTurn] = field(default_factory=list)
+    _history: list[ConversationTurn] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
-    def add_turn(self, question: str, answer: str, sources: List[str]) -> None:
+    def add_turn(self, question: str, answer: str, sources: list[str]) -> None:
         turn = ConversationTurn(question=question, answer=answer, sources=list(sources))
         with self._lock:
             self._history.append(turn)

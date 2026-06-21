@@ -3,24 +3,28 @@
 Ported from GitNexus process-processor.ts + entry-point-scoring.ts.
 Detects execution flows through the codebase via BFS from scored entry points.
 """
+
 from __future__ import annotations
 
 import logging
 import re
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from dataclasses import dataclass
 
-from .types import (
-    CommunityMembership, GraphRelationship,
-    ProcessDetectionResult, ProcessNode, ProcessStep,
-)
 from .graph import KnowledgeGraph
+from .types import (
+    CommunityMembership,
+    GraphRelationship,
+    ProcessDetectionResult,
+    ProcessNode,
+    ProcessStep,
+)
 
 logger = logging.getLogger("rai.repo_map.processes")
 
 
 # ── Config ────────────────────────────────────────────────────
+
 
 @dataclass
 class ProcessDetectionConfig:
@@ -73,9 +77,17 @@ _UTILITY_PATTERNS = [
 
 # Test file patterns
 _TEST_FILE_PATTERNS = [
-    ".test.", ".spec.", "__tests__/", "__mocks__/",
-    "/test/", "/tests/", "/testing/",
-    "_test.py", "/test_", "_test.go", "/src/test/",
+    ".test.",
+    ".spec.",
+    "__tests__/",
+    "__mocks__/",
+    "/test/",
+    "/tests/",
+    "/testing/",
+    "_test.py",
+    "/test_",
+    "_test.go",
+    "/src/test/",
 ]
 
 
@@ -85,7 +97,10 @@ def _is_test_file(file_path: str) -> bool:
 
 
 def _score_entry_point(
-    name: str, is_exported: bool, callee_count: int, caller_count: int,
+    name: str,
+    is_exported: bool,
+    callee_count: int,
+    caller_count: int,
 ) -> float:
     """Score a symbol as a potential process entry point."""
     if callee_count == 0:
@@ -110,14 +125,15 @@ def _score_entry_point(
 
 # ── BFS trace ─────────────────────────────────────────────────
 
+
 def _bfs_trace(
     entry_id: str,
     graph: KnowledgeGraph,
     config: ProcessDetectionConfig,
-) -> List[str]:
+) -> list[str]:
     """BFS from entry_id through CALLS edges. Returns ordered node list."""
-    visited: Set[str] = set()
-    path: List[str] = [entry_id]
+    visited: set[str] = set()
+    path: list[str] = [entry_id]
     visited.add(entry_id)
     queue: deque = deque([(entry_id, 0)])
 
@@ -126,7 +142,8 @@ def _bfs_trace(
         if depth >= config.max_trace_depth:
             continue
         outgoing = [
-            r for r in graph.outgoing(current_id, rel_type="CALLS")
+            r
+            for r in graph.outgoing(current_id, rel_type="CALLS")
             if r.confidence >= config.min_confidence
         ]
         outgoing.sort(key=lambda r: -r.confidence)
@@ -144,25 +161,23 @@ def _bfs_trace(
 
 # ── Deduplication ─────────────────────────────────────────────
 
-def _deduplicate_traces(traces: List[List[str]]) -> List[List[str]]:
+
+def _deduplicate_traces(traces: list[list[str]]) -> list[list[str]]:
     """Remove subset traces and keep longest per (entry, terminal) pair."""
     # Sort longest first
     traces = sorted(traces, key=len, reverse=True)
 
     # Subset removal: remove trace A if all its nodes appear in longer trace B
-    kept: List[List[str]] = []
+    kept: list[list[str]] = []
     for trace in traces:
         trace_set = set(trace)
-        is_subset = any(
-            trace_set.issubset(set(other)) and trace != other
-            for other in kept
-        )
+        is_subset = any(trace_set.issubset(set(other)) and trace != other for other in kept)
         if not is_subset:
             kept.append(trace)
 
     # Per entry→terminal dedup: keep longest
-    seen_endpoints: Dict[Tuple[str, str], int] = {}
-    final: List[List[str]] = []
+    seen_endpoints: dict[tuple[str, str], int] = {}
+    final: list[list[str]] = []
     for trace in kept:
         key = (trace[0], trace[-1])
         if key not in seen_endpoints:
@@ -174,7 +189,8 @@ def _deduplicate_traces(traces: List[List[str]]) -> List[List[str]]:
 
 # ── Label generation ──────────────────────────────────────────
 
-def _trace_label(trace: List[str], graph: KnowledgeGraph) -> str:
+
+def _trace_label(trace: list[str], graph: KnowledgeGraph) -> str:
     entry = graph.get_node(trace[0])
     terminal = graph.get_node(trace[-1])
     entry_name = entry.properties.name.split(".")[-1] if entry else trace[0]
@@ -184,21 +200,22 @@ def _trace_label(trace: List[str], graph: KnowledgeGraph) -> str:
 
 # ── Main algorithm ────────────────────────────────────────────
 
+
 def detect_processes(
     graph: KnowledgeGraph,
-    memberships: List[CommunityMembership],
-    config: Optional[ProcessDetectionConfig] = None,
+    memberships: list[CommunityMembership],
+    config: ProcessDetectionConfig | None = None,
 ) -> ProcessDetectionResult:
     """Detect execution processes via entry-point scoring + BFS tracing."""
     if config is None:
         config = ProcessDetectionConfig()
 
     # Build membership lookup: node_id -> community_id
-    membership_map: Dict[str, str] = {m.node_id: m.community_id for m in memberships}
+    membership_map: dict[str, str] = {m.node_id: m.community_id for m in memberships}
 
     # Count callers and callees per symbol
-    callee_count: Dict[str, int] = defaultdict(int)
-    caller_count: Dict[str, int] = defaultdict(int)
+    callee_count: dict[str, int] = defaultdict(int)
+    caller_count: dict[str, int] = defaultdict(int)
     for rel in graph.iter_relationships():
         if rel.type == "CALLS" and rel.confidence >= config.min_confidence:
             callee_count[rel.source_id] += 1
@@ -206,7 +223,7 @@ def detect_processes(
 
     # Score all symbols and select top candidates
     candidate_labels = {"Function", "Method"}
-    scored: List[Tuple[float, str]] = []
+    scored: list[tuple[float, str]] = []
     for node in graph.iter_nodes():
         if node.label not in candidate_labels:
             continue
@@ -225,7 +242,7 @@ def detect_processes(
     candidates = [nid for _, nid in scored[:200]]
 
     # BFS from each candidate
-    raw_traces: List[List[str]] = []
+    raw_traces: list[list[str]] = []
     for entry_id in candidates:
         trace = _bfs_trace(entry_id, graph, config)
         if len(trace) >= config.min_steps:
@@ -236,8 +253,8 @@ def detect_processes(
     traces = traces[: config.max_processes]
 
     # Build ProcessNode objects
-    processes: List[ProcessNode] = []
-    steps: List[ProcessStep] = []
+    processes: list[ProcessNode] = []
+    steps: list[ProcessStep] = []
 
     for idx, trace in enumerate(traces):
         entry_id = trace[0]
@@ -246,14 +263,8 @@ def detect_processes(
         proc_id = f"proc_{idx}_{entry_id.split(':')[-1].lower()[:20]}"
 
         # Determine community involvement
-        communities_touched = list({
-            membership_map[nid]
-            for nid in trace
-            if nid in membership_map
-        })
-        process_type = (
-            "cross_community" if len(communities_touched) > 1 else "intra_community"
-        )
+        communities_touched = list({membership_map[nid] for nid in trace if nid in membership_map})
+        process_type = "cross_community" if len(communities_touched) > 1 else "intra_community"
 
         proc = ProcessNode(
             id=proc_id,
@@ -270,27 +281,34 @@ def detect_processes(
 
         # Add Process node to graph
         from .types import GraphNode, NodeProperties
-        graph.add_node(GraphNode(
-            id=f"Process:{proc_id}",
-            label="Process",
-            properties=NodeProperties(
-                name=label,
-                heuristic_label=label,
-                process_type=process_type,
-                step_count=len(trace),
-            ),
-        ))
+
+        graph.add_node(
+            GraphNode(
+                id=f"Process:{proc_id}",
+                label="Process",
+                properties=NodeProperties(
+                    name=label,
+                    heuristic_label=label,
+                    process_type=process_type,
+                    step_count=len(trace),
+                ),
+            )
+        )
 
         # STEP_IN_PROCESS relationships
         for step_num, nid in enumerate(trace, start=1):
             step_rel_id = f"STEP_IN_PROCESS:{proc_id}:{step_num}"
-            graph.add_relationship(GraphRelationship(
-                id=step_rel_id,
-                source_id=nid,
-                target_id=f"Process:{proc_id}",
-                type="STEP_IN_PROCESS", confidence=1.0,
-                reason="process_step", step=step_num,
-            ))
+            graph.add_relationship(
+                GraphRelationship(
+                    id=step_rel_id,
+                    source_id=nid,
+                    target_id=f"Process:{proc_id}",
+                    type="STEP_IN_PROCESS",
+                    confidence=1.0,
+                    reason="process_step",
+                    step=step_num,
+                )
+            )
             steps.append(ProcessStep(process_id=proc_id, node_id=nid, step=step_num))
 
     cross_community = sum(1 for p in processes if p.process_type == "cross_community")

@@ -1,4 +1,4 @@
-from repo_aware_ai.chunker import Chunk, chunk_text
+from repo_aware_ai.chunker import chunk_text
 
 
 def test_chunk_text_respects_size_and_overlap():

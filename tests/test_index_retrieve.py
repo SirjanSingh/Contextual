@@ -4,6 +4,7 @@ We don't hit the real Gemini API in tests — the FakeEmbedder fixture in
 conftest.py provides a deterministic embedding good enough to verify the
 indexer / retriever / cache code paths.
 """
+
 from __future__ import annotations
 
 from repo_aware_ai.chunker import chunk_files

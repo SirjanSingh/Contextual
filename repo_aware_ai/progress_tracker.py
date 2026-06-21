@@ -1,10 +1,10 @@
 """Progress tracking for upload and indexing operations."""
+
 from __future__ import annotations
 
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 
 @dataclass
@@ -12,13 +12,15 @@ class UploadProgress:
     """Tracks progress of an upload/indexing operation."""
 
     upload_id: str
-    stage: str = "uploading"  # uploading | scanning | parsing | embedding | indexing | complete | error
+    stage: str = (
+        "uploading"  # uploading | scanning | parsing | embedding | indexing | complete | error
+    )
     progress: float = 0.0  # 0-100
     total_files: int = 0
     files_processed: int = 0
     current_file: str = ""
     chunks_created: int = 0
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     start_time: float = field(default_factory=time.time)
     repo_path: str = ""
 
@@ -51,7 +53,7 @@ class UploadProgress:
 
 
 # Global progress store
-_progress_store: Dict[str, UploadProgress] = {}
+_progress_store: dict[str, UploadProgress] = {}
 
 
 def create_progress(total_files: int = 0) -> UploadProgress:
@@ -62,7 +64,7 @@ def create_progress(total_files: int = 0) -> UploadProgress:
     return p
 
 
-def get_progress(upload_id: str) -> Optional[UploadProgress]:
+def get_progress(upload_id: str) -> UploadProgress | None:
     """Get progress by upload ID."""
     return _progress_store.get(upload_id)
 
