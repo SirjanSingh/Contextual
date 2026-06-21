@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Issue templates (bug, feature) and pull request template.
 - `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1).
 - `.vscodeignore` so packaged `.vsix` ships only built output.
+- Vertex AI backend support for both the LLM and embeddings (project/ADC or access token, not just an API key).
+- `docs/PUBLISHING.md` — ordered PyPI → VS Marketplace release guide with a pre-release checklist.
+- Extension `README.md`, `LICENSE`, and `CHANGELOG.md` so the `.vsix` is Marketplace-publishable.
+- Env-tunable embedding batch size / pacing (`RAI_EMBED_BATCH_SIZE`, `RAI_EMBED_BATCH_PAUSE`) and Gemini retry backoff (`RAI_GEMINI_MAX_RETRIES`, `RAI_GEMINI_MAX_WAIT`) to respect Vertex per-minute quotas.
+
+### Changed
+- Embedder defaults to smaller batches (20) and longer pacing to stay under Vertex token-per-minute limits; added `text-embedding-005` to the known-dimension map.
+- Retry backoff widened (6 attempts, up to 30s) so a saturated per-minute quota clears on its own instead of surfacing as a hard error.
+
+### Security
+- VS Code extension now stores the Google API key **only** in SecretStorage; it is no longer mirrored into `settings.json`, so it cannot leak via settings exports or Settings Sync.
 
 ## [0.1.0] — 2026-05-09
 

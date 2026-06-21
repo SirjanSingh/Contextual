@@ -103,7 +103,8 @@ Environment variables (also accepted in `.env`):
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `GOOGLE_API_KEY` | yes | — | Google Gemini API key |
+| `GOOGLE_API_KEY` | yes* | — | Google Gemini API key (*or use Vertex AI via `GOOGLE_CLOUD_PROJECT`) |
+| `GOOGLE_CLOUD_PROJECT` | no | — | Use Vertex AI instead of an API key (ADC or `VERTEX_ACCESS_TOKEN`) |
 | `GEMINI_MODEL` | no | `models/gemini-2.5-flash` | LLM for answers and compression |
 | `EMBEDDING_MODEL` | no | `gemini-embedding-001` | 768-dim embedding model |
 | `RAI_PORT` | no | `8360` | Backend HTTP port (use `18360` on Windows — ports near 8360 are often reserved by Hyper-V) |
@@ -151,10 +152,10 @@ For deeper reading: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Status & roadmap
 
-Phases 1–4 are complete. The plan lives at [docs/ROADMAP.md](docs/ROADMAP.md).
+Phases 1–4 are complete; Phase 5 (release engineering) is in progress. The plan lives at [docs/ROADMAP.md](docs/ROADMAP.md).
 
-Currently working: CLI, web backend, web frontend (chat + repo map), VS Code extension (bootstrap + streaming chat + repo map panel).
-Up next: Phase 5 — GitHub Actions CI, PyPI publish, VS Code Marketplace.
+Currently working: CLI, web backend, web frontend (chat + repo map), VS Code extension (bootstrap + streaming chat + repo map panel). Supports both Gemini API keys and Vertex AI.
+Phase 5 progress: GitHub Actions CI ✅, PyPI/Marketplace packaging verified ✅ (see [docs/PUBLISHING.md](docs/PUBLISHING.md)); publishing to PyPI + VS Code Marketplace pending.
 
 ---
 
