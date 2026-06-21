@@ -78,6 +78,10 @@ coverage.xml
 # Frontend
 node_modules/
 dist/
+*.tsbuildinfo
+
+# Build artifacts
+*.vsix
 
 # Local dev scratch
 tmp/
